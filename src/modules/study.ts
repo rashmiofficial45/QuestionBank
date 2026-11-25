@@ -1,8 +1,8 @@
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/database";
-import { attempts, bookmarks, questions } from "@/database/schema";
+import { attempts, bookmarks, practiceSessions, questions } from "@/database/schema";
 import type { Content } from "@/lib/content";
 
 const profileName = "question_bank_profile";
@@ -17,59 +17,95 @@ export async function getProfile(create = false) {
 }
 
 export function displayText(content: Content) {
-  return content.blocks.flatMap((block) => block.type === "paragraph" ? [block.text] : []).join("\n");
+  return content.blocks.map((block) => {
+    if (block.type === "paragraph") return block.text;
+    if (block.type === "table") return [block.headers, ...block.rows].map((row) => row.join(" ")).join("\n");
+    return "";
+  }).filter(Boolean).join("\n");
 }
+
+export const activeQuestion = isNull(questions.archivedAt);
 
 const listing = {
   id: questions.id, slug: questions.slug, subject: questions.subject, topic: questions.topic,
-  source: questions.source, difficulty: questions.difficulty, number: questions.number, searchText: questions.searchText,
+  source: questions.source, difficulty: questions.difficulty, number: questions.number, searchText: questions.searchText, tags: questions.tags, revision: questions.revision,
 };
 export type QuestionSummary = Pick<typeof questions.$inferSelect, keyof typeof listing>;
 
-export async function browse(query = "", subject = "", page = 1) {
+export const PAGE_SIZE = 8;
+
+export async function browse(query = "", subject = "", page = 1, source = "", format = "") {
   const escaped = query.replace(/[\\%_]/g, "\\$&");
   const predicate = and(
+    activeQuestion,
     subject ? eq(questions.subject, subject) : undefined,
+    source ? eq(questions.source, source) : undefined,
+    format === "table" ? sql`${questions.content}->'blocks' @> '[{"type":"table"}]'::jsonb` : undefined,
     query ? or(sql`to_tsvector('english', ${questions.searchText}) @@ websearch_to_tsquery('english', ${query})`, ilike(questions.searchText, `%${escaped}%`)) : undefined,
   );
-  const [items, count] = await Promise.all([
-    db.select(listing).from(questions).where(predicate).orderBy(questions.source, questions.number, questions.id).limit(12).offset((page - 1) * 12),
-    db.$count(questions, predicate),
-  ]);
-  return { items, count };
+  const count = await db.$count(questions, predicate);
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(count / PAGE_SIZE)));
+  const headline = query
+    ? sql<string>`ts_headline('english', ${questions.searchText}, websearch_to_tsquery('english', ${query}), ${"HighlightAll=true, StartSel=\u0001, StopSel=\u0002"})`
+    : sql<null>`null`;
+  const items = await db.select({ ...listing, content: questions.content, importId: questions.importId, headline })
+    .from(questions).where(predicate).orderBy(questions.source, questions.number, questions.id).limit(PAGE_SIZE).offset((currentPage - 1) * PAGE_SIZE);
+  return { items, count, page: currentPage };
 }
 
 export async function subjects() {
   return db.select({ name: questions.subject, count: sql<number>`count(*)::int` })
-    .from(questions).groupBy(questions.subject).orderBy(questions.subject);
+    .from(questions).where(activeQuestion).groupBy(questions.subject).orderBy(questions.subject);
+}
+
+export async function paperSources() {
+  return db.selectDistinct({ name: questions.source }).from(questions).where(activeQuestion).orderBy(questions.source);
+}
+
+export async function bookmarkIds() {
+  const id = await getProfile();
+  return new Set(id ? (await db.select({ id: bookmarks.questionId }).from(bookmarks).where(eq(bookmarks.profileId, id))).map(({ id }) => id) : []);
+}
+
+export async function studyHistory() {
+  const id = await getProfile();
+  if (!id) return [];
+  return db.select({
+    id: attempts.id, questionId: attempts.questionId, manifest: practiceSessions.manifest, date: attempts.createdAt, correct: attempts.correct, mode: attempts.mode, sessionId: attempts.sessionId, revision: attempts.revision,
+    source: questions.source, subject: questions.subject, slug: questions.slug, number: questions.number,
+  }).from(attempts).innerJoin(questions, eq(attempts.questionId, questions.id))
+    .leftJoin(practiceSessions, eq(attempts.sessionId, practiceSessions.id))
+    .where(eq(attempts.profileId, id)).orderBy(desc(attempts.createdAt), desc(attempts.id)).limit(20);
 }
 
 export async function progress() {
   const id = await getProfile();
-  if (!id) return { total: 0, correct: 0, unique: 0, saved: 0 };
-  const [[result], saved] = await Promise.all([
+  if (!id) return { total: 0, correct: 0, unique: 0, saved: 0, practice: 0 };
+  const [[result], [saved]] = await Promise.all([
     db.select({
       total: sql<number>`count(*)::int`,
       correct: sql<number>`count(*) filter (where ${attempts.correct})::int`,
+      practice: sql<number>`count(*) filter (where ${attempts.mode} = 'practice')::int`,
       unique: sql<number>`count(distinct ${attempts.questionId})::int`,
     }).from(attempts).where(eq(attempts.profileId, id)),
-    db.$count(bookmarks, eq(bookmarks.profileId, id)),
+    db.select({ count: sql<number>`count(*)::int` }).from(bookmarks).innerJoin(questions, eq(questions.id, bookmarks.questionId))
+      .where(and(eq(bookmarks.profileId, id), activeQuestion)),
   ]);
-  return { ...result, saved };
+  return { ...result, saved: saved.count };
 }
 
 export async function savedQuestions() {
   const id = await getProfile();
   if (!id) return [];
   return db.select(listing).from(bookmarks).innerJoin(questions, eq(bookmarks.questionId, questions.id))
-    .where(eq(bookmarks.profileId, id)).orderBy(desc(bookmarks.createdAt)).limit(100);
+    .where(and(eq(bookmarks.profileId, id), activeQuestion)).orderBy(desc(bookmarks.createdAt)).limit(100);
 }
 
 export async function questionBySlug(slug: string) {
-  return (await db.select().from(questions).where(eq(questions.slug, slug)).limit(1))[0];
+  return (await db.select().from(questions).where(and(eq(questions.slug, slug), activeQuestion)).limit(1))[0];
 }
 
 export async function nextQuestion(source: string, number: number) {
-  return (await db.select({ slug: questions.slug }).from(questions).where(and(eq(questions.source, source), sql`${questions.number} > ${number}`))
+  return (await db.select({ slug: questions.slug }).from(questions).where(and(activeQuestion, eq(questions.source, source), sql`${questions.number} > ${number}`))
     .orderBy(questions.number).limit(1))[0];
 }

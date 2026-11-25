@@ -5,21 +5,25 @@
 - [x] Search and browse published questions, submit an answer, and retain anonymous progress. Verified through the browser against PostgreSQL.
 - [x] Upload a question paper and answer key, process asynchronously, and preserve source files. Verified 50 questions, 200 options in order, and 50 answer mappings. Inspected all nine table crops.
 - [x] Review read-only, edit a draft, and publish validated questions. Verified publication and student visibility in one browser workflow.
-- [ ] Review the live desktop and mobile MVP with the user.
+- [x] Review the live desktop and mobile MVP with the user.
 
 ## 2. Document fidelity
 
-- [ ] Add OCR, richer layout analysis, structured tables, explanation imports, and extraction diagnostics. Verify using representative scanned and native fixtures.
-- [ ] Review extraction results and measured accuracy with the user.
+- [x] Add English OCR for scanned question and answer-key pages and extract rectangular tables from native and scanned source geometry.
+- [x] Render question cards in White and Black with shadcn/ui, inline grading, and saved practice history.
+- [ ] Extend complex layout diagnostics and add explanation imports in a later document milestone.
+- [x] Review extraction results with the user and incorporate their study-interface feedback.
 
 ## 3. Editorial administration
 
-- [ ] Extend revision workflows, rich editing, taxonomy, bulk operations, audit history, and retry controls. Verify draft and published isolation.
+- [x] Add immutable revisions, editable choice lists and classification, selected publication, archive and restore, activity history, and import retry. Verify draft and published isolation.
+- [x] Add search highlights, numbered pagination, and correct/incorrect answer styling to the question bank.
+- [x] Add a timed, single-question practice workspace with a scrollable navigator, saved answers, marks for review, and scoring on submission.
 - [ ] Review the administrative workflows with the user.
 
 ## 4. Study experience
 
-- [ ] Add remaining question formats, revision, full test mode, and topic analytics. Verify grading, history, and mobile workflows.
+- [ ] Add remaining question formats, dedicated revision tools, and topic analytics. Verify grading, history, and mobile workflows.
 - [ ] Review student features with the user.
 
 ## 5. Release readiness

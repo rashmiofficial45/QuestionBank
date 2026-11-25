@@ -15,6 +15,20 @@
       "when": 1795640665718,
       "tag": "0001_mushy_nehzno",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795642060562,
+      "tag": "0002_acoustic_thunderbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795644157253,
+      "tag": "0003_faithful_snowbird",
+      "breakpoints": true
     }
   ]
 }

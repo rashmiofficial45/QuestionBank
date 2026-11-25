@@ -27,7 +27,7 @@ export default async function QuestionPage({ params, searchParams }: { params: P
       <div className="question-kicker"><span className="pill">{question.subject}</span><span>{question.source}</span></div>
       <h1>Question {question.number}</h1>
       <QuestionContent blocks={question.content.blocks} importId={question.importId} />
-      <AnswerForm id={question.id} options={question.content.options} next={nextHref} />
+      <AnswerForm mode={practice === "1" ? "practice" : "bank"} id={question.id} revision={question.revision} options={question.content.options} next={nextHref} />
     </article>
     {nextHref && <div className="question-nav"><span /><Link className="text-link" href={nextHref}>Skip to next question <ArrowRight size={16} /></Link></div>}
   </div>;

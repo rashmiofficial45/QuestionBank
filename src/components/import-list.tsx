@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import type { imports } from "@/database/schema";
 
 export function ImportStatus({ value }: { value: string }) {
   const text = { queued: "Queued", processing: "Processing", ready: "Drafts ready", failed: "Failed" }[value] ?? value;
-  return <span className={`pill ${value === "ready" ? "pill-success" : value === "failed" ? "pill-error" : ""}`}>{text}</span>;
+  return <Badge variant={value === "failed" ? "outline" : "secondary"}>{text}</Badge>;
 }
 
 export function ImportList({ items }: { items: (typeof imports.$inferSelect)[] }) {

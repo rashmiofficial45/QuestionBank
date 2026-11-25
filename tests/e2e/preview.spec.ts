@@ -26,6 +26,9 @@ test("Polity PDFs can be reviewed and published, then searched and practiced", a
   await page.getByRole("link", { name: "Review", exact: true }).click();
   await page.getByRole("link", { name: "Question 6", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Question 6", exact: true })).toBeVisible();
+  await expect(page.getByRole("table", { name: /question table from page/i })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "House Committee", exact: true })).toBeVisible();
+  await page.getByText("Original PDF crop", { exact: true }).click();
   await expect(page.getByRole("img", { name: /original prompt layout for question 6/i })).toBeVisible();
   const crop = page.getByRole("img", { name: /original prompt layout for question 6/i });
   await expect.poll(() => crop.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(200);
@@ -64,7 +67,7 @@ test("Polity PDFs can be reviewed and published, then searched and practiced", a
   if (capture) await page.screenshot({ path: join(capture, "mvp-desktop.png"), fullPage: true });
   await page.getByRole("textbox", { name: "Search questions" }).fill("Andaman Sea");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("link", { name: /In the Andaman Sea/ }).first().click();
+  await page.getByRole("link", { name: "Question 1", exact: true }).first().click();
   await expect(page.getByText("Correct answer", { exact: true })).toHaveCount(0);
   await page.getByRole("radio").nth(1).check();
   await page.getByRole("button", { name: "Check answer" }).click();

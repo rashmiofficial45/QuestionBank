@@ -1,9 +1,9 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, getTableColumns } from "drizzle-orm";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { resolve } from "node:path";
 import { db } from "@/database";
-import { drafts, imports, questions } from "@/database/schema";
+import { drafts, editorialEvents, imports, questions, questionVersions } from "@/database/schema";
 
 export async function adminEnabled() {
   if (process.env.ENABLE_PRIVATE_ADMIN !== "1") return false;
@@ -27,11 +27,21 @@ export async function getImport(id: string) {
 
 export function getDrafts(id: string) {
   return db.select({
-    ...{
-      id: drafts.id, importId: drafts.importId, number: drafts.number, page: drafts.page,
-      content: drafts.content, original: drafts.original, issues: drafts.issues, editedAt: drafts.editedAt,
-    },
+    ...getTableColumns(drafts),
     published: questions.id,
+    publishedGeneration: questions.draftGeneration,
+    publishedRevision: questions.revision,
+    archivedAt: questions.archivedAt,
   }).from(drafts).leftJoin(questions, and(eq(questions.draftId, drafts.id), eq(questions.importId, id)))
     .where(eq(drafts.importId, id)).orderBy(drafts.number);
+}
+
+export function importActivity(importId: string) {
+  return db.select().from(editorialEvents).where(eq(editorialEvents.importId, importId))
+    .orderBy(desc(editorialEvents.createdAt)).limit(100);
+}
+
+export function versionHistory(questionId: string) {
+  return db.select().from(questionVersions).where(eq(questionVersions.questionId, questionId))
+    .orderBy(desc(questionVersions.revision));
 }

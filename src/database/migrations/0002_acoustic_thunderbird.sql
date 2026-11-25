@@ -1,0 +1,1 @@
+ALTER TABLE "study_attempts" ADD COLUMN "mode" text;

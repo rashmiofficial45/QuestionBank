@@ -1,10 +1,31 @@
-import { Target } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { browse } from "@/modules/study";
+import { PracticeSetup } from "@/components/practice-forms";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { activeSession, recentSessions } from "@/modules/practice";
+import { getProfile, paperSources } from "@/modules/study";
 
 export const dynamic = "force-dynamic";
-export default async function Practice() {
-  const { items } = await browse();
-  if (items[0]) redirect(`/questions/${items[0].slug}?practice=1`);
-  return <><div className="page-heading"><span className="tile-icon violet"><Target size={21} /></span><h1>Practice</h1><p>Published questions will appear here when they are ready for practice.</p></div></>;
+export const metadata = { title: "Practice test" };
+
+export default async function PracticePage() {
+  const profile = await getProfile();
+  if (profile) {
+    const session = await activeSession(profile);
+    if (session) redirect(`/practice/${session.id}`);
+  }
+  const [papers, history] = await Promise.all([paperSources(), profile ? recentSessions(profile) : []]);
+  return <>
+    <header className="study-heading mb-6"><div><h1>Practice test</h1><p>Work through one question at a time. Review your score and answers after submitting.</p></div></header>
+    <Card className="shadow-none">
+      <CardHeader><CardTitle>Test settings</CardTitle></CardHeader>
+      <CardContent>{papers.length ? <PracticeSetup papers={papers} /> : <p className="text-muted-foreground">Publish questions to start a test.</p>}</CardContent>
+    </Card>
+    {history.length > 0 && <Card className="mt-5 shadow-none">
+      <CardHeader><CardTitle>Recent tests</CardTitle></CardHeader>
+      <CardContent><ul className="grid gap-2">{history.map((test) => <li key={test.id}>
+        <Link className="text-link" href={`/practice/${test.id}`}>Review {test.manifest.length}-question test from {test.submittedAt?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}</Link>
+      </li>)}</ul></CardContent>
+    </Card>}
+  </>;
 }

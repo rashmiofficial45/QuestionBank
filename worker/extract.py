@@ -6,8 +6,11 @@ import re
 import pymupdf as pdf
 from pydantic import BaseModel
 
+from document_layout import analyze_page, center, read_scanned_columns
+
 
 QUESTION = re.compile(r"^(\d{1,3})[.)](?:\s+|$)(.*)$")
+OCR_QUESTION = re.compile(r"^(\d{1,3})[,.:)](?:\s+|$)(.*)$")
 OPTION = re.compile(r"^\(([A-Za-z])\)\s*(.*)$")
 KEY = re.compile(r"(?<![\w.])(\d{1,3})\s*(?:[.):–-]\s*|\s+)\(?([A-Za-z])\)?(?=\s|$)")
 MAX_PAGES = 100
@@ -36,33 +39,36 @@ def open_paper(path: Path):
     return doc
 
 
-def raw_lines(page):
-    flags = pdf.TEXTFLAGS_DICT & ~pdf.TEXT_PRESERVE_IMAGES
-    for block in page.get_text("dict", flags=flags)["blocks"]:
-        for line in block.get("lines", []):
-            text = "".join(span["text"] for span in line["spans"]).strip()
-            if text:
-                yield pdf.Rect(line["bbox"]), text
-
-
-def read_lines(doc, polity):
+def read_layouts(doc, label, stage, *, include_tables=True):
+    layouts = []
     for page in doc:
+        stage(f"Reading {label} page {page.number + 1} of {len(doc)}")
+        layouts.append(analyze_page(page, include_tables=include_tables))
+    return layouts
+
+
+def read_lines(doc, layouts, polity, stage):
+    for page, layout in enumerate(layouts, start=1):
         buckets = [[], []] if polity else [[]]
-        if polity and page.number == 0:
+        if polity and page == 1:
             continue
-        for box, text in raw_lines(page):
+        lines = layout.lines
+        if polity and layout.scanned and not doc[page - 1].rotation:
+            stage(f"Resolving OCR reading order on paper page {page} of {len(doc)}")
+            lines = read_scanned_columns(doc[page - 1])
+        for box, text in lines:
             if polity and (box.y0 < 46 or box.y0 >= 795):
                 continue
             column = int(polity and box.x0 >= 300)
-            buckets[column].append(Line(page.number + 1, column, box, text))
+            buckets[column].append(Line(page, column, box, text))
         for bucket in buckets:
             yield from sorted(bucket, key=lambda line: (round(line.box.y0, 1), line.box.x0))
 
 
-def read_key(doc):
+def read_key(layouts):
     answers = defaultdict(set)
-    for page in doc:
-        for _, text in raw_lines(page):
+    for layout in layouts:
+        for _, text in layout.lines:
             for match in KEY.finditer(text):
                 answers[int(match[1])].add(match[2].lower())
     return answers
@@ -95,31 +101,75 @@ def crop_stem(doc, output, number, stem):
         rect = pdf.Rect(rect.x0 - 4, rect.y0 - 3, rect.x1 + 5, rect.y1 + 2) & page.rect
         file = f"page-{number}-{i + 1}.png"
         if output:
-            page.get_pixmap(matrix=pdf.Matrix(2, 2), clip=rect, alpha=False).save(output / file)
+            scale = min(2, 2200 / max(rect.width, rect.height, 1))
+            page.get_pixmap(matrix=pdf.Matrix(scale, scale), clip=rect * page.rotation_matrix, alpha=False).save(output / file)
         crops.append(dict(id=f"source-{i + 1}", type="source_crop", page=page_number, file=file,
                           alt=f"Original prompt layout for question {number}, PDF page {page_number}"))
     return crops
 
 
+def inside_table(line, box):
+    # Use the line's center so glyphs from an adjacent prompt cannot move inside a cell.
+    return box.contains(center(line.box))
+
+
+def build_blocks(stem, layouts):
+    tables = {}
+    for line in stem:
+        for index, table in enumerate(layouts[line.page - 1].tables):
+            if inside_table(line, table.box):
+                tables[(line.page, index)] = table
+    if not tables:
+        return [dict(id="stem", type="paragraph", text=as_text(stem))]
+    blocks = []
+    text_lines = []
+    emitted = set()
+
+    def flush():
+        if text_lines:
+            blocks.append(dict(id=f"stem-{len(blocks) + 1}", type="paragraph", text=as_text(text_lines)))
+            text_lines.clear()
+
+    for line in stem:
+        match = next(((key, table) for key, table in tables.items() if key[0] == line.page
+                      and inside_table(line, table.box)), None)
+        if not match:
+            text_lines.append(line)
+        elif match[0] not in emitted:
+            flush()
+            key, table = match
+            emitted.add(key)
+            blocks.append(dict(id=f"table-{key[0]}-{key[1] + 1}", type="table", page=line.page,
+                               bounds=list(table.box), headers=table.headers, rows=table.rows))
+    flush()
+    return blocks
+
+
 def extract(paper: Path, key: Path, output: Path | None = None, stage=lambda _: None):
     stage("Reading paper layout and answer key")
     with open_paper(paper) as doc, open_paper(key) as key_doc:
+        layouts = read_layouts(doc, "paper", stage)
+        key_layouts = read_layouts(key_doc, "answer key", stage, include_tables=False)
+        cover = " ".join(text for _, text in layouts[0].lines)
+        masthead = " ".join(text for box, text in layouts[1].lines if box.y0 < 46 or box.y0 > 795) if len(doc) > 1 else ""
         polity = (
-            len(doc) == 13 and "Polity" in doc[0].get_text()
-            and "Test-Polity-PT - 01" in doc[1].get_text()
-            and "Vajiram" in doc[1].get_text()
+            len(doc) == 13
+            and "polity" in cover.lower()
+            and "vajiram" in masthead.lower()
+            and bool(re.search(r"polity\s*[-–]\s*pt\s*[-–]\s*01\b", masthead, re.I))
         )
-        answers = read_key(key_doc)
+        answers = read_key(key_layouts)
         segments = []
         current = None
-        lines = list(read_lines(doc, polity))
+        lines = list(read_lines(doc, layouts, polity, stage))
         if not lines:
-            raise ValueError("No native text was found. This PDF needs OCR.")
+            raise ValueError("No legible question text was recognized in this PDF.")
         if len(lines) > 25000:
             raise ValueError("Document exceeds the MVP text-processing limit.")
         left = min((line.box.x0 for line in lines if QUESTION.match(line.text)), default=0)
         for line in lines:
-            match = QUESTION.match(line.text)
+            pattern = OCR_QUESTION if layouts[line.page - 1].scanned else QUESTION
+            match = pattern.match(line.text)
             margin = (304 if line.column else 28) if polity else left
             if match and abs(line.box.x0 - margin) <= 5:
                 current = (int(match[1]), line.page, [])
@@ -156,6 +206,13 @@ def extract(paper: Path, key: Path, output: Path | None = None, stage=lambda _: 
             candidates = answers[number]
             answer = next(iter(candidates)) if len(candidates) == 1 else None
             issues = list(global_issues)
+            page_layouts = [layouts[index - 1] for index in {page, *(line.page for line in content)}]
+            if any(layout.scanned for layout in page_layouts):
+                issues.append("Question text was read using OCR. Verify it against the source page.")
+                if any(layout.uncertain_words for layout in page_layouts):
+                    issues.append("OCR detected low-confidence words on a source page.")
+            if any(layout.scanned for layout in key_layouts):
+                issues.append("The answer key was read using OCR. Verify the selected answer against the key.")
             if not answer or answer not in {option["id"] for option in choices}:
                 issues.append("Missing or conflicting official answer.")
                 answer = None
@@ -163,12 +220,20 @@ def extract(paper: Path, key: Path, output: Path | None = None, stage=lambda _: 
                 issues.append("Option boundaries need review.")
             if polity and [choice["id"] for choice in choices] != list("abcd"):
                 issues.append("Expected four options in source order.")
-            text = as_text(stem)
-            if not text:
+            if not as_text(stem):
                 issues.append("Question text is missing.")
-            blocks = [dict(id="stem", type="paragraph", text=text)]
-            if polity and number in POLITY_TABLES and stem:
-                blocks.extend(crop_stem(doc, output, number, stem))
+            blocks = build_blocks(stem, layouts)
+            structured = any(block["type"] == "table" for block in blocks)
+            unresolved = any(inside_table(line, box) for line in stem
+                             for box in layouts[line.page - 1].unresolved_tables or [])
+            if unresolved or (polity and number in POLITY_TABLES and not structured):
+                issues.append("A table could not be structured safely. Compare the original layout before publishing.")
+            if stem and (structured or unresolved or (polity and number in POLITY_TABLES) or any(layout.scanned for layout in page_layouts)):
+                crops = crop_stem(doc, output, number, stem)
+                if not unresolved and (structured or any(layout.scanned for layout in page_layouts)):
+                    for crop in crops:
+                        crop["reference"] = True
+                blocks.extend(crops)
             items.append((number, page, dict(version=1, interaction="single_choice", blocks=blocks,
                                               options=choices, answer=answer, explanation=""), issues))
         return items

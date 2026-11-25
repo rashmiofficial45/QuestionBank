@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { BookOpen, Bookmark, ChartNoAxesColumnIncreasing, ChevronRight, Compass, Files, House, LayoutDashboard, Moon, ShieldCheck, Sun, Zap } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -22,12 +23,12 @@ export function Shell({ children, admin = false, privateAdmin = false }: { child
   const active = links.findLast(({ href }) => pathname === href || (href !== "/" && pathname.startsWith(href + "/")));
   function toggleTheme() {
     const root = document.documentElement;
-    const current = root.dataset.theme ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const current = root.dataset.theme === "dark" ? "dark" : "light";
     root.dataset.theme = current === "dark" ? "light" : "dark";
     localStorage.setItem("atlas-theme", root.dataset.theme);
   }
   return <div className="shell">
-    <script dangerouslySetInnerHTML={{ __html: "try{const t=localStorage.getItem('atlas-theme');if(t)document.documentElement.dataset.theme=t}catch{}" }} />
+    <script dangerouslySetInnerHTML={{ __html: "try{const t=localStorage.getItem('atlas-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch{}" }} />
     <aside className="sidebar">
       <Link className="brand" href={admin ? "/admin" : "/"}>
         <span className="brand-mark"><Compass size={23} strokeWidth={1.8} /></span>
@@ -43,7 +44,7 @@ export function Shell({ children, admin = false, privateAdmin = false }: { child
       </div>
     </aside>
     <div className="main-shell">
-      <header className="topbar"><div className="breadcrumb"><span>{admin ? "Admin" : "Study workspace"}</span><ChevronRight size={14} /><strong>{active?.label ?? "Question"}</strong></div><button type="button" className="icon-button theme-toggle" onClick={toggleTheme} aria-label="Toggle color theme"><Sun size={17} className="sun-icon" /><Moon size={17} className="moon-icon" /></button></header>
+      <header className="topbar"><div className="breadcrumb"><span>{admin ? "Admin" : "Study workspace"}</span><ChevronRight size={14} /><strong>{active?.label ?? "Question"}</strong></div><Button type="button" variant="outline" size="icon" onClick={toggleTheme} aria-label="Toggle black and white theme"><Sun className="sun-icon" /><Moon className="moon-icon" /></Button></header>
       <main id="content" className="workspace">{children}</main>
     </div>
   </div>;

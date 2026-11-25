@@ -1,10 +1,10 @@
 # Study Atlas
 
-Study Atlas is a local question bank and editorial workspace for civil services preparation. The MVP supports paired PDF uploads, asynchronous extraction, read-only review, draft editing, publication, and student practice.
+Study Atlas is a local question bank and editorial workspace for civil services preparation. Study Atlas supports paired PDF uploads, asynchronous extraction, read-only review, draft editing, publication, and student practice.
 
 ## Local preview
 
-Prerequisites are Node.js 22.13 or later, pnpm 12, Python 3.13+, and PostgreSQL 18. Use a dedicated local PostgreSQL database named `question_bank`.
+Prerequisites are Node.js 22.13 or later, pnpm 12, Python 3.13+, PostgreSQL 18, and Tesseract 5 with the English language data. The worker uses Tesseract for image-only pages. Use a dedicated local PostgreSQL database named `question_bank`.
 
 ```sh
 cp .env.example .env.local
@@ -47,10 +47,22 @@ pnpm exec playwright install chromium
 POLITY_FIXTURE_DIR=/path/to/fixtures pnpm test:e2e
 ```
 
-The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf` and `Test-01-Polity-01-Answer-Key-23-Nov-.pdf`. Use a review database for this end-to-end test because it publishes the sample import. Set `CHROME_CHANNEL=chrome` to use installed Chrome.
+The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf` and `Test-01-Polity-01-Answer-Key-23-Nov-.pdf`. Use a review database for this end-to-end test because it publishes the sample import. Set `CHROME_CHANNEL=chrome` to use installed Chrome. For additional OCR coverage, set `SCAN_FIXTURE_DIR` to a directory containing `scanned-paper.pdf` and `scanned-answer-key.pdf`. Set `POLITY_RASTER_FIXTURE_DIR` to include a full rasterized Polity regression in Pytest and Playwright. That directory should contain `polity-raster.pdf` and `polity-key-raster.pdf`. The test helpers in `worker/tests/test_extract.py` rasterize a PDF at 240 DPI with no native text layer.
 
 ## MVP coverage
 
-The Polity parser handles the sample paper's known two-column layout and retains original crops for its nine identified tables. The parser stages sufficiently structured native-text papers with unfamiliar layouts for editorial verification. Scanned PDFs require the later OCR milestone. Options, answer selection, and explanations are editable. Table prompts use the original image with a text transcription. The full PDF uses the browser's native preview.
+The Polity parser handles the sample paper's known two-column layout and renders all nine tables as structured HTML, with links to the original PDF crops. The worker uses word coordinates to map cell text to rules from the native PDF or from the page raster. English scanned question papers and answer keys use Tesseract and require editorial source verification before publishing. Reviewers can open the separate answer key and edit individual cells, prompt text, answers, and optional explanations. The browser uses its native viewer for the full PDF.
+
+The editor covers rectangular tables. Detected ambiguous or merged grids keep their source crops and a review flag. Scan clarity, table ruling, document rotation, and unfamiliar layouts can affect recognition. For an existing import with untouched source blocks, `worker/refresh_tables.py IMPORT_ID` upgrades verified table layouts while retaining question IDs, answers, edits to other fields, and attempts.
+
+The question bank supports inline grading, highlighted search matches, and numbered shadcn pagination. Practice runs a timed test with one question per screen, a scrollable navigator, saved selections, and optional marks for review. Submission reveals the score and correct answers. The default uses 60 minutes and two marks per correct answer, with one-third of the marks deducted for an incorrect answer. The start form can change those settings. Progress distinguishes practice attempts from question-bank activity and links back to the submitted test question.
+
+The interface uses shadcn/ui with White and Black themes and semantic answer feedback. An explanation appears after grading when the saved question includes one.
+
+## Editorial workflow
+
+Edit a published question to prepare a draft revision. Publishing creates an immutable version and updates the student bank. Previous versions keep their original answers and options, including for someone already taking a test. Editors can reorder or add options, edit the classification, publish selected questions, archive or unarchive a published question, and restore a previous version to a draft. Import history includes changes and failed uploads can be retried from their stored PDFs.
+
+Run editorial browser tests against a separate database and worker. Set `EDITORIAL_TEST_DATABASE=1`, `PREVIEW_URL` to that server, and the fixture directory variables above. Run `pnpm test:e2e tests/e2e/editorial.spec.ts`.
 
 PostgreSQL holds the import queue, draft and original JSON content, published snapshots, attempts, and bookmarks. Full-text and trigram indexes support question search. Source PDFs and crop images use local persistent storage outside the checked-in workspace content. Review the [task checklist](tasks/todo.md) for subsequent milestones.

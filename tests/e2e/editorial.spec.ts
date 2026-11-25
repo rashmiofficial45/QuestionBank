@@ -1,0 +1,114 @@
+import { expect, test } from "@playwright/test";
+import { join } from "node:path";
+
+test("publishes revisions independently of active tests and keeps editorial history", async ({ page, context }) => {
+  const fixture = process.env.SCAN_FIXTURE_DIR;
+  test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use a dedicated editorial test database.");
+  const title = `Editorial verification ${Date.now()}`;
+  const admin = await context.newPage();
+  await admin.goto("/admin/imports/new");
+  await admin.getByLabel("Paper title").fill(title);
+  await admin.getByLabel("Subject").fill("Civics");
+  await admin.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "scanned-paper.pdf"));
+  await admin.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "scanned-answer-key.pdf"));
+  await admin.getByRole("button", { name: "Upload and process" }).click();
+  await expect(admin.getByText("1 structured table")).toBeVisible({ timeout: 35_000 });
+  const imported = admin.url();
+  const edit = `${imported}?mode=edit&q=1`;
+  const publish = `${imported}?mode=publish&q=1`;
+  const history = `${imported}?mode=history&q=1`;
+  const slug = imported.split("/").at(-1) + "-1";
+
+  await admin.goto(edit);
+  await admin.getByLabel("Topic").fill("Public institutions");
+  await admin.getByLabel("Tags").fill("legislature, duties");
+  await admin.getByRole("checkbox", { name: /verified this draft/ }).check();
+  await admin.getByRole("button", { name: "Save draft" }).click();
+  await expect(admin.getByText("Draft saved.")).toBeVisible();
+  await admin.goto(publish);
+  await admin.getByRole("button", { name: "Publish question 1" }).click();
+  await expect(admin.getByText("1 question published to the student bank.")).toBeVisible();
+  await page.goto("/practice");
+  await expect(page.getByRole("heading", { name: "Practice test" })).toBeVisible();
+  await page.getByLabel("Paper", { exact: true }).selectOption(title, { timeout: 5000 });
+  await page.getByRole("button", { name: "Start test" }).click();
+  await expect(page.getByRole("heading", { name: "Question 1 of 1" })).toBeVisible();
+  await page.locator('button[name="option"][value="a"]').click();
+  await expect(page.getByText("Answer saved", { exact: true })).toBeVisible();
+
+  await admin.goto(edit);
+  await admin.getByRole("button", { name: "Move option B up" }).click();
+  await admin.getByLabel("Correct answer").selectOption("b");
+  await admin.getByLabel("Explanation").fill("Editorial review verification.");
+  await admin.getByRole("button", { name: "Save draft" }).click();
+  await expect(admin.getByText("Draft saved.")).toBeVisible();
+  const bank = await context.newPage();
+  await bank.goto(`/questions/${slug}`);
+  await expect(bank.getByRole("radio").first()).toHaveValue("a");
+  await admin.goto(publish);
+  await admin.getByRole("button", { name: "Publish question 1" }).click();
+  await expect(admin.getByText("1 question published to the student bank.")).toBeVisible();
+  await bank.getByRole("radio").first().check();
+  await bank.getByRole("button", { name: "Check answer" }).click();
+  await expect(bank.locator(".answer-form").getByRole("alert")).toContainText("Correct answer");
+  await bank.reload();
+  await expect(bank.getByRole("radio").first()).toHaveValue("b");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Submit test" }).click();
+  await expect(page.getByText(/2 \/ 2 points.*1 correct/)).toBeVisible();
+  await expect(page.locator(".option-correct")).toContainText("Parliament");
+
+  await admin.goto(history);
+  await expect(admin.getByRole("table", { name: "Published revisions" }).getByRole("row")).toHaveCount(3);
+  await expect(admin.getByText("Published revision 2.")).toBeVisible();
+  await admin.getByRole("button", { name: "Restore revision 1 to draft" }).click();
+  await expect(admin.getByLabel("Correct answer")).toHaveValue("a");
+  await bank.reload();
+  await expect(bank.getByRole("radio").first()).toHaveValue("b");
+  await admin.goto(history);
+  await admin.getByRole("button", { name: "Archive question" }).click();
+  await expect(admin.getByRole("button", { name: "Return to question bank" })).toBeVisible();
+  await expect((await bank.goto(`/questions/${slug}`))?.status()).toBe(404);
+  await admin.getByRole("button", { name: "Return to question bank" }).click();
+  await expect(admin.getByRole("button", { name: "Archive question" })).toBeVisible();
+  await bank.goto(`/questions/${slug}`);
+  await expect(bank.getByRole("radio").first()).toHaveValue("b");
+});
+
+test("publishes only the selected questions from a validated import", async ({ page }) => {
+  const fixture = process.env.POLITY_FIXTURE_DIR;
+  test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use a dedicated editorial test database with the Polity fixtures.");
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(`Bulk publish verification ${Date.now()}`);
+  await page.getByLabel("Subject").fill("Polity");
+  await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "Test-01-Polity-01-QP-23-Nov-.pdf"));
+  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "Test-01-Polity-01-Answer-Key-23-Nov-.pdf"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText(/50 ready to publish/)).toBeVisible({ timeout: 35_000 });
+  const id = page.url().split("/").at(-1);
+  await page.getByRole("link", { name: "Publish", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Question 1", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Question 6", exact: true }).check();
+  await page.getByRole("button", { name: "Publish selected" }).click();
+  await expect(page.getByText("2 questions published to the student bank.")).toBeVisible();
+  await expect(page.getByText(/48 ready to publish.*2 published/)).toBeVisible();
+  expect((await page.goto(`/questions/${id}-2`))?.status()).toBe(404);
+  await page.goto(`/questions/${id}-6`);
+  await expect(page.getByRole("table")).toBeVisible();
+});
+
+test("requeues a failed import and records the retry", async ({ page }) => {
+  test.skip(process.env.EDITORIAL_TEST_DATABASE !== "1", "Use a dedicated editorial test database.");
+  const malformed = { name: "malformed.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.7\nINVALID") };
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(`Import retry verification ${Date.now()}`);
+  await page.getByLabel("Subject").fill("Civics");
+  await page.getByLabel("Question paper PDF").setInputFiles(malformed);
+  await page.getByLabel("Answer key PDF").setInputFiles(malformed);
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByRole("button", { name: "Retry import" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Retry import" }).click();
+  await page.getByRole("link", { name: "View editorial activity" }).click();
+  await expect(page.getByRole("table", { name: "Editorial activity" })).toContainText("Retry queued");
+});
