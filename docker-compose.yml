@@ -1,0 +1,48 @@
+services:
+  database:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: question_bank
+      POSTGRES_USER: question_bank
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a local database password in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U question_bank -d question_bank"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - postgres_data:/var/lib/postgresql
+  migrate:
+    build: .
+    command: ["pnpm", "db:migrate"]
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:?Set COMPOSE_DATABASE_URL in .env}
+    depends_on:
+      database:
+        condition: service_healthy
+  web:
+    build: .
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:?Set COMPOSE_DATABASE_URL in .env}
+      ENABLE_PRIVATE_ADMIN: "1"
+      STORAGE_DIR: /data
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - source_files:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  worker:
+    build: ./worker
+    environment:
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:?Set COMPOSE_DATABASE_URL in .env}
+      STORAGE_DIR: /data
+    volumes:
+      - source_files:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+volumes:
+  postgres_data:
+  source_files:
