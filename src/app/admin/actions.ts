@@ -80,7 +80,8 @@ export async function saveDraft(importId: string, id: string, generation: number
     const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, id), eq(drafts.importId, importId))).for("update");
     if (!draft) return { error: "Draft unavailable." };
     if (draft.generation !== generation) return { error: "This draft changed in another edit. Reload before saving." };
-    const answer = form.get("answer");
+    const interaction = form.get("interaction") ?? draft.content.interaction;
+    const answers = form.getAll("answer");
     const content = questionSchema.safeParse({
       ...draft.content,
       blocks: draft.content.blocks.map((block) => {
@@ -92,7 +93,8 @@ export async function saveDraft(importId: string, id: string, generation: number
         };
       }),
       options: optionInputs.data,
-      answer: answer === "" ? null : answer,
+      interaction,
+      answer: interaction === "multiple_choice" ? answers : answers[0] || null,
       explanation: form.get("explanation"),
     });
     if (!content.success) return { error: "Provide question text and a value for every option." };

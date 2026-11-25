@@ -70,7 +70,7 @@ export const questionVersions = pgTable("question_versions", {
 }, (table) => [primaryKey({ columns: [table.questionId, table.revision] })]);
 
 export type TestQuestion = { id: string; revision: number };
-export type TestResponse = { option?: string; marked?: boolean };
+export type TestResponse = { option?: string; options?: string[]; marked?: boolean };
 
 export const practiceSessions = pgTable("practice_sessions", {
   id: uuid().primaryKey().defaultRandom(),
@@ -100,7 +100,8 @@ export const attempts = pgTable("study_attempts", {
   id: uuid().primaryKey().defaultRandom(),
   profileId: uuid("profile_id").notNull(),
   questionId: uuid("question_id").notNull().references(() => questions.id),
-  optionId: text("option_id").notNull(),
+  optionId: text("option_id"),
+  optionIds: text("option_ids").array(),
   revision: integer().notNull().default(1),
   sessionId: uuid("session_id").references(() => practiceSessions.id),
   mode: text().$type<"practice" | "bank">(),

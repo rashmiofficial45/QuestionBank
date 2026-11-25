@@ -12,7 +12,7 @@ export default async function PracticePage() {
   const profile = await getProfile();
   if (profile) {
     const session = await activeSession(profile);
-    if (session) redirect(`/practice/${session.id}`);
+    if (session) redirect(`/practice/${session.id}?q=1`);
   }
   const [papers, history] = await Promise.all([paperSources(), profile ? recentSessions(profile) : []]);
   return <>

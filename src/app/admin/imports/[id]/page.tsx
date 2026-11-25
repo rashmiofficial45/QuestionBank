@@ -8,6 +8,7 @@ import { QuestionContent } from "@/components/question-content";
 import { EditForm, RefreshImport } from "@/components/import-forms";
 import { ImportStatus } from "@/components/import-list";
 import { publicationIssues, questionSchema } from "@/lib/content";
+import { choiceIds } from "@/lib/choice-selection";
 import { getDrafts, getImport } from "@/modules/imports";
 import { publishImport, retryImport } from "../../actions";
 
@@ -86,7 +87,10 @@ export default async function ImportDetails({ params, searchParams }: { params: 
                 classification={{ subject: selected.subject ?? paper.subject, topic: selected.topic ?? "General", difficulty: selected.difficulty ?? "Unrated", tags: selected.tags }} />
               </> : <>
                 <QuestionContent blocks={selected.content.blocks} importId={id} administrative />
-                <ul className="review-options">{selected.content.options.map((option, index) => <li key={`${option.id}-${index}`} className={`review-option ${selected.content.answer === option.id ? "correct" : ""}`}><strong>{option.label}.</strong> {option.text} {selected.content.answer === option.id && <Check size={14} className="inline" aria-label="Correct answer" />}</li>)}</ul>
+                <ul className="review-options">{selected.content.options.map((option, index) => {
+                  const correct = choiceIds(selected.content.answer).includes(option.id);
+                  return <li key={`${option.id}-${index}`} className={`review-option ${correct ? "correct" : ""}`}><strong>{option.label}.</strong> {option.text} {correct && <Check size={14} className="inline" aria-label="Correct answer" />}</li>;
+                })}</ul>
                 {selected.content.explanation && <p className="notice">{selected.content.explanation}</p>}
               </>}
             <div className="question-nav admin-section">

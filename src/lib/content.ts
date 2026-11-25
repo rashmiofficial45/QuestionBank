@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { choiceIds } from "./choice-selection";
 
 const paragraph = z.object({ id: z.string(), type: z.literal("paragraph"), text: z.string().trim().min(1) });
 const crop = z.object({
@@ -25,21 +26,35 @@ export const optionSchema = z.object({
   label: z.string().trim().min(1).max(12),
   text: z.string().trim().min(1).max(8000),
 });
-export const questionSchema = z.object({
+const question = z.object({
   version: z.literal(1),
-  interaction: z.literal("single_choice"),
   blocks: z.array(z.discriminatedUnion("type", [paragraph, crop, table])).min(1).max(100),
   options: z.array(optionSchema).max(12),
-  answer: z.string().nullable(),
   explanation: z.string().trim().max(8000),
 });
+export const questionSchema = z.discriminatedUnion("interaction", [
+  question.extend({ interaction: z.literal("single_choice"), answer: z.string().nullable() }),
+  question.extend({ interaction: z.literal("multiple_choice"), answer: z.array(z.string()).max(12).nullable() }),
+]);
 export type Content = z.infer<typeof questionSchema>;
+
+export function validSelection(content: Content, values: FormDataEntryValue[]) {
+  const ids = z.array(z.string().min(1).max(64)).max(12).safeParse(values);
+  if (!ids.success || new Set(ids.data).size !== ids.data.length ||
+      (content.interaction === "single_choice" && ids.data.length > 1) ||
+      !ids.data.every((id) => content.options.some((option) => option.id === id))) return null;
+  return ids.data;
+}
 
 export function publicationIssues(content: Content): string[] {
   const issues = [];
   const ids = new Set(content.options.map((option) => option.id));
   if (ids.size < 2 || ids.size !== content.options.length || new Set(content.options.map((option) => option.label.toLowerCase())).size !== ids.size) issues.push("Provide at least two options with distinct labels and identifiers.");
-  if (!content.answer || !ids.has(content.answer)) issues.push("Select a valid correct answer.");
+  const answers = choiceIds(content.answer);
+  const minimum = content.interaction === "multiple_choice" ? 2 : 1;
+  if (answers.length < minimum || new Set(answers).size !== answers.length || !answers.every((id) => ids.has(id))) {
+    issues.push(minimum === 2 ? "Select at least two distinct correct answers." : "Select a valid correct answer.");
+  }
   if (!content.blocks.some((block) => block.type === "paragraph")) issues.push("Provide question text.");
   return issues;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useOptimistic, useRef, useState } from "react";
 import { Check, Flag, Timer, Trash2, X } from "lucide-react";
 import { deleteTestReview, finishPractice, saveResponse, startPractice } from "@/app/(student)/practice/actions";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import type { Content } from "@/lib/content";
 import type { TestResponse } from "@/database/schema";
+import { choiceIds, type ChoiceSelection } from "@/lib/choice-selection";
 
 export function PracticeSetup({ papers }: { papers: { name: string }[] }) {
   const [state, action, pending] = useActionState(startPractice, {});
@@ -49,28 +50,45 @@ export function TestTimer({ id, seconds, unanswered }: { id: string; seconds: nu
   </div>;
 }
 
-export function TestOptions({ id, questionId, options, response, answer, ended }: {
-  id: string; questionId: string; options: Content["options"]; response: TestResponse; answer?: string | null; ended: boolean;
+export function TestOptions({ id, questionId, options, interaction, response, answer, ended }: {
+  id: string; questionId: string; options: Content["options"]; interaction: Content["interaction"];
+  response: TestResponse; answer?: ChoiceSelection | null; ended: boolean;
 }) {
   const [state, action, pending] = useActionState(saveResponse.bind(null, id, questionId), {});
+  const multiple = interaction === "multiple_choice";
+  const [selectedIds, select] = useOptimistic(choiceIds(response.options ?? response.option), (_current, next: string[]) => next);
+  const answerIds = choiceIds(answer);
   return <form action={action} className="test-options">
-    <fieldset disabled={ended || pending} className="answer-form">
-      <legend>{ended ? "Answer review" : "Select one answer"}</legend>
+    <fieldset disabled={ended || (pending && !multiple)} className="answer-form">
+      <legend>{ended ? "Answer review" : multiple ? "Select all correct answers" : "Select one answer"}</legend>
       {options.map((option) => {
-        const selected = response.option === option.id;
-        const correct = ended && answer === option.id;
+        const selected = selectedIds.includes(option.id);
+        const correct = ended && answerIds.includes(option.id);
         const wrong = ended && selected && !correct;
-        return <Button key={option.id} type="submit" variant="outline" name="option" value={option.id} aria-pressed={selected}
-          className={`option inline-option test-choice ${correct ? "option-correct" : wrong ? "option-incorrect" : selected ? "option-selected" : ""}`}>
+        const style = correct ? "option-correct" : wrong ? "option-incorrect" : selected ? "option-selected" : "";
+        const feedback = correct ? <Check aria-label="Correct option" /> : wrong ? <X aria-label="Your incorrect answer" /> : null;
+        if (multiple) return <label key={option.id} className={`option option-checkbox test-choice ${style}`}>
+          <input type="checkbox" name="option" value={option.id} checked={selected} data-test-answer
+            onChange={(event) => {
+              const next = event.target.checked ? [...selectedIds, option.id] : selectedIds.filter((value) => value !== option.id);
+              const data = new FormData();
+              data.set("selection", "multiple");
+              next.forEach((value) => data.append("option", value));
+              startTransition(() => { select(next); action(data); });
+            }} />
+          <span className="option-letter">{option.label}.</span><span>{option.text}</span>{feedback}
+        </label>;
+        return <Button key={option.id} type="submit" variant="outline" name="option" value={option.id} aria-pressed={selected} data-test-answer
+          className={`option inline-option test-choice ${style}`}>
           <span className="option-letter">{option.label}.</span><span>{option.text}</span>
-          {correct ? <Check aria-label="Correct option" /> : wrong ? <X aria-label="Your incorrect answer" /> : selected ? <Check aria-hidden="true" /> : <span />}
+          {feedback ?? (selected ? <Check aria-hidden="true" /> : <span />)}
         </Button>;
       })}
     </fieldset>
     {!ended && <div className="flex flex-wrap items-center gap-2">
       <Button type="submit" name="mark" value="toggle" variant="ghost" disabled={pending}><Flag />{response.marked ? "Unmark for review" : "Mark for review"}</Button>
-      {response.option && <Button type="submit" name="option" value="" variant="ghost" disabled={pending}>Clear selection</Button>}
-      <span aria-live="polite" className="text-sm text-muted-foreground">{pending ? "Saving…" : response.option ? "Answer saved" : ""}</span>
+      {selectedIds.length > 0 && <Button type="submit" name="selection" value="clear" variant="ghost" disabled={pending}>Clear selection</Button>}
+      <span aria-live="polite" className="text-sm text-muted-foreground">{pending ? "Saving…" : selectedIds.length ? "Answer saved" : ""}</span>
     </div>}
     {state.error && <p role="alert" className="form-error">{state.error}</p>}
   </form>;

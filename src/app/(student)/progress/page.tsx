@@ -38,7 +38,7 @@ export default async function ProgressPage() {
         {history.length ? <Table aria-label="Recent attempts">
           <TableHeader><TableRow><TableHead>Question</TableHead><TableHead>Mode</TableHead><TableHead>Result</TableHead><TableHead>When</TableHead></TableRow></TableHeader>
           <TableBody>{history.map((attempt) => <TableRow key={attempt.id}>
-            <TableCell><Link className="text-link" href={attempt.sessionId ? `/practice/${attempt.sessionId}?q=${(attempt.manifest?.findIndex(({ id }) => id === attempt.questionId) ?? 0) + 1}` : `/questions/${attempt.slug}`}>{attempt.source} · Question {attempt.number}</Link>{attempt.revision > 1 && <span className="ml-2 text-xs text-muted-foreground">v{attempt.revision}</span>}</TableCell>
+            <TableCell><Link className="text-link" href={attempt.sessionId ? `/practice/${attempt.sessionId}?review=1&q=${(attempt.manifest?.findIndex(({ id }) => id === attempt.questionId) ?? 0) + 1}` : `/questions/${attempt.slug}`}>{attempt.source} · Question {attempt.number}</Link>{attempt.revision > 1 && <span className="ml-2 text-xs text-muted-foreground">v{attempt.revision}</span>}</TableCell>
             <TableCell>{attempt.mode === "practice" ? "Practice" : attempt.mode === "bank" ? "Question bank" : "Study"}</TableCell>
             <TableCell><Badge variant={attempt.correct ? "default" : "outline"}>{attempt.correct ? "Correct" : "Incorrect"}</Badge></TableCell>
             <TableCell><time dateTime={attempt.date.toISOString()}>{dateFormat.format(attempt.date)}</time></TableCell>

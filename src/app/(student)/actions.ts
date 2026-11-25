@@ -6,25 +6,29 @@ import { z } from "zod";
 import { db } from "@/database";
 import { attempts, bookmarks, practiceSessions, questions, questionVersions } from "@/database/schema";
 import { activeQuestion, getProfile } from "@/modules/study";
+import { gradeSelection, type ChoiceSelection } from "@/lib/choice-selection";
+import { validSelection } from "@/lib/content";
 
-export type AnswerState = { correct?: boolean; selected?: string; answer?: string; explanation?: string; error?: string };
+export type AnswerState = { correct?: boolean; selected?: ChoiceSelection; answer?: ChoiceSelection; explanation?: string; error?: string };
 
 export async function submitAnswer(questionId: string, revision: number, mode: "practice" | "bank", _previous: AnswerState, form: FormData): Promise<AnswerState> {
-  const choice = z.string().max(64).safeParse(form.get("option"));
-  if (!z.uuid().safeParse(questionId).success || !choice.success || !z.number().int().positive().safeParse(revision).success || (mode !== "practice" && mode !== "bank")) return { error: "Choose an answer before checking." };
+  const values = form.getAll("option");
+  if (!z.uuid().safeParse(questionId).success || !values.length || !z.number().int().positive().safeParse(revision).success || (mode !== "practice" && mode !== "bank")) return { error: "Choose an answer before checking." };
   const [question] = await db.select({ content: questionVersions.content }).from(questionVersions)
     .innerJoin(questions, eq(questionVersions.questionId, questions.id))
     .where(and(eq(questions.id, questionId), eq(questionVersions.revision, revision), activeQuestion));
-  if (!question?.content.answer || !question.content.options.some((option) => option.id === choice.data)) {
+  const selected = question && validSelection(question.content, values);
+  if (!question?.content.answer || !selected?.length) {
     return { error: "This option is unavailable. Reload the question and try again." };
   }
   const profileId = (await getProfile(true))!;
-  const correct = question.content.answer === choice.data;
-  await db.insert(attempts).values({ profileId, questionId, optionId: choice.data, revision, correct, mode });
+  const multiple = question.content.interaction === "multiple_choice";
+  const correct = gradeSelection(question.content.answer, selected) === true;
+  await db.insert(attempts).values({ profileId, questionId, optionId: multiple ? null : selected[0], optionIds: multiple ? selected : null, revision, correct, mode });
   revalidatePath("/");
   revalidatePath("/progress");
   revalidatePath("/revision");
-  return { correct, selected: choice.data, answer: question.content.answer, explanation: question.content.explanation };
+  return { correct, selected, answer: question.content.answer, explanation: question.content.explanation };
 }
 
 export async function setBookmark(questionId: string, selected: boolean) {

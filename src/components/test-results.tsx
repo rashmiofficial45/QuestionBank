@@ -34,8 +34,8 @@ export function TestEnded({ id, score, seconds, topics }: { id: string; score: S
           <div><dt className="text-muted-foreground">Time taken</dt><dd className="font-semibold">{Math.floor(seconds / 60)}m {seconds % 60}s</dd></div>
         </dl>
         <div className="test-controls">
-          <Button asChild><Link href={`/practice/${id}?review=1`}>Review answers<ArrowRight /></Link></Button>
-          <Button asChild variant="outline"><Link href="/practice">Exit test</Link></Button>
+          <Button asChild><Link href={`/practice/${id}?review=1`} replace>Review answers<ArrowRight /></Link></Button>
+          <Button asChild variant="outline"><Link href="/practice" replace>Exit test</Link></Button>
         </div>
       </CardContent>
     </Card>

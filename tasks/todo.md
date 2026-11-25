@@ -25,7 +25,9 @@
 
 - [x] Add a collapsible sidebar, test focus mode, a separate results and review flow, and deletable score history.
 - [x] Add a revision queue and performance by subject and topic. Verify scoring, review deletion, and retry behavior in the browser.
-- [ ] Extend the supported question formats.
+- [x] Add keyboard shortcuts for navigating timed tests and selecting answers.
+- [x] Add multiple-correct MCQs with editorial answer keys and exact-set grading.
+- [ ] Extend the remaining question formats and detect multiple-correct answer keys during import.
 - [ ] Review student features with the user.
 
 ## 5. Release readiness

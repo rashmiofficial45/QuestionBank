@@ -14,3 +14,12 @@ it("uses the same score calculation for history and treats no attempts as missin
   expect(testAccuracy(1, 2)).toBe(33);
   expect(testAccuracy(0, 0)).toBeNull();
 });
+
+it("grades multiple answers as an exact set, independent of selection order", () => {
+  expect(scoreTest([
+    { answer: ["a", "c"], selected: ["c", "a"] },
+    { answer: ["a", "c"], selected: ["a"] },
+    { answer: ["a", "c"], selected: ["a", "b", "c"] },
+    { answer: ["a", "c"], selected: [] },
+  ], 6, 2)).toEqual({ correct: 1, incorrect: 2, unanswered: 1, points: 2, maximum: 24 });
+});

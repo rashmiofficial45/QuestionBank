@@ -1,8 +1,15 @@
-export type ScoreRow = { answer: string | null; selected?: string };
+import { gradeSelection, type ChoiceSelection } from "./choice-selection";
+
+export type ScoreRow = { answer: ChoiceSelection | null; selected?: ChoiceSelection };
 
 export function scoreTest(rows: ScoreRow[], correctPoints: number, wrongPoints: number) {
-  const correct = rows.filter(({ answer, selected }) => selected && answer === selected).length;
-  const incorrect = rows.filter(({ answer, selected }) => selected && answer !== selected).length;
+  let correct = 0;
+  let incorrect = 0;
+  for (const { answer, selected } of rows) {
+    const result = gradeSelection(answer, selected);
+    if (result === true) correct++;
+    if (result === false) incorrect++;
+  }
   return scoreCounts(correct, incorrect, rows.length, correctPoints, wrongPoints);
 }
 

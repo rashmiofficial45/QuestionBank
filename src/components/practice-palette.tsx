@@ -30,7 +30,7 @@ export function PracticePalette({ id, index, entries, reviewing = false }: { id:
         return <Link className="test-step" data-state={status} data-marked={marked || undefined}
           href={`/practice/${id}?${reviewing ? "review=1&" : ""}q=${position + 1}`} ref={selected ? active : undefined} key={position}
           aria-current={selected ? "step" : undefined} aria-label={`Question ${position + 1}, ${status}${marked ? ", marked for review" : ""}`}
-          prefetch={false}>{position + 1}</Link>;
+          prefetch={false} replace>{position + 1}</Link>;
       })}
     </div>
     {entries.length > 7 && <Button variant="ghost" size="icon-sm" type="button" onClick={() => scroll(1)} aria-label="Scroll to later questions"><ChevronRight /></Button>}

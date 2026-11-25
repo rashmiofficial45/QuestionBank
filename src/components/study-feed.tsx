@@ -21,7 +21,7 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
   const query = value(params.q, 120);
   const subject = value(params.subject, 60);
   const source = value(params.source, 120);
-  const format = params.format === "table" ? "table" : "";
+  const format = params.format === "table" || params.format === "multiple_choice" ? params.format : "";
   const requestedPage = /^\d{1,9}$/.test(value(params.page, 10)) ? Math.max(1, Number(params.page)) : 1;
   const base = "/questions";
   const [{ items, count, page }, groups, papers, saved] = await Promise.all([browse(query, subject, requestedPage, source, format), subjects(), paperSources(), bookmarkIds()]);
@@ -45,6 +45,7 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
       <NativeSelect aria-label="Question format" name="format" defaultValue={format}>
         <NativeSelectOption value="">All formats</NativeSelectOption>
         <NativeSelectOption value="table">Table questions</NativeSelectOption>
+        <NativeSelectOption value="multiple_choice">Multiple correct answers</NativeSelectOption>
       </NativeSelect>
       <Button type="submit" variant="outline">Search</Button>
       {(query || subject || source || format) && <Button asChild variant="ghost"><Link href={base}>Clear filters</Link></Button>}
@@ -64,7 +65,7 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
           <CardContent>
             <div className="study-badges"><Badge variant="secondary"><SearchHighlight text={item.subject} terms={terms} /></Badge>{item.topic !== "General" && <Badge variant="outline"><SearchHighlight text={item.topic} terms={terms} /></Badge>}{item.content.blocks.some((block) => block.type === "table") && <Badge variant="outline">Table</Badge>}{item.tags.map((tag) => <Badge key={tag} variant="outline"><SearchHighlight text={tag} terms={terms} /></Badge>)}</div>
             <QuestionContent blocks={item.content.blocks} importId={item.importId} terms={terms} />
-            <AnswerForm terms={terms} id={item.id} revision={item.revision} options={item.content.options} inline />
+            <AnswerForm terms={terms} id={item.id} revision={item.revision} options={item.content.options} interaction={item.content.interaction} inline />
           </CardContent>
         </Card></article>;
       })}

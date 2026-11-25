@@ -41,6 +41,7 @@ export async function browse(query = "", subject = "", page = 1, source = "", fo
     subject ? eq(questions.subject, subject) : undefined,
     source ? eq(questions.source, source) : undefined,
     format === "table" ? sql`${questions.content}->'blocks' @> '[{"type":"table"}]'::jsonb` : undefined,
+    format === "multiple_choice" ? sql`${questions.content}->>'interaction' = ${format}` : undefined,
     query ? or(sql`to_tsvector('english', ${questions.searchText}) @@ websearch_to_tsquery('english', ${query})`, ilike(questions.searchText, `%${escaped}%`)) : undefined,
   );
   const count = await db.$count(questions, predicate);

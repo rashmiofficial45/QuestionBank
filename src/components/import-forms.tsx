@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableHeader, TableHead, TableRow, TableCell, TableBody } from "@/components/ui/table";
 import type { Content } from "@/lib/content";
+import { choiceIds } from "@/lib/choice-selection";
 
 export function UploadForm() {
   const [state, action, pending] = useActionState(uploadPapers, {});
@@ -37,7 +38,8 @@ export function EditForm({ content, importId, id, issues, generation, classifica
     id: content.options.findIndex((item) => item.id === option.id) === index ? option.id : `source-duplicate-${index}`,
   })));
   const [taxonomy, setTaxonomy] = useState({ ...classification, tags: classification.tags.join(", ") });
-  const [answer, setAnswer] = useState(content.answer ?? "");
+  const [interaction, setInteraction] = useState(content.interaction);
+  const [answers, setAnswers] = useState(() => choiceIds(content.answer));
   const [explanation, setExplanation] = useState(content.explanation);
   const [verified, setVerified] = useState(false);
   function move(index: number, offset: -1 | 1) {
@@ -74,6 +76,13 @@ export function EditForm({ content, importId, id, issues, generation, classifica
         <TableBody>{block.rows.map((cells, row) => <TableRow key={row}>{cells.map((value, col) => <TableCell key={col}>{cellInput(value, row, col)}</TableCell>)}</TableRow>)}</TableBody>
       </Table></div>;
     })}
+    <label className="field">Answer interaction
+      <select name="interaction" aria-label="Answer interaction" value={interaction} onChange={(event) => {
+        const next = event.target.value === "multiple_choice" ? "multiple_choice" : "single_choice";
+        setInteraction(next);
+        if (next === "single_choice") setAnswers((current) => current.slice(0, 1));
+      }}><option value="single_choice">Single choice</option><option value="multiple_choice">Multiple correct answers</option></select>
+    </label>
     <input type="hidden" name="options" value={JSON.stringify(options)} />
     <section className="grid gap-3">
       <h3 className="font-semibold">Answer options</h3>
@@ -85,7 +94,7 @@ export function EditForm({ content, importId, id, issues, generation, classifica
           <Button variant="outline" type="button" size="icon-sm" aria-label={`Move option ${label} down`} disabled={index === options.length - 1} onClick={() => move(index, 1)}><ArrowDown /></Button>
           <Button variant="ghost" type="button" size="icon-sm" aria-label={`Remove option ${label}`} onClick={() => {
             setOptions((current) => current.filter((option) => option.id !== id));
-            if (answer === id) setAnswer("");
+            setAnswers((current) => current.filter((answer) => answer !== id));
           }}><Trash2 /></Button>
         </div>
       </div>)}
@@ -94,7 +103,15 @@ export function EditForm({ content, importId, id, issues, generation, classifica
         setOptions([...options, { id: crypto.randomUUID(), label, text: "" }]);
       }}><Plus />Add option</Button>
     </section>
-    <label className="field">Correct answer<select name="answer" value={answer} onChange={(event) => setAnswer(event.target.value)}><option value="">Choose an answer</option>{options.map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label>
+    {interaction === "multiple_choice"
+      ? <fieldset className="grid gap-2"><legend className="mb-2 font-medium">Correct answers</legend>
+          {options.map((option) => <label className="flex items-center gap-2" key={option.id}>
+            <input type="checkbox" name="answer" value={option.id} checked={answers.includes(option.id)}
+              onChange={(event) => setAnswers(event.target.checked ? [...answers, option.id] : answers.filter((id) => id !== option.id))} />
+            Option {option.label}
+          </label>)}
+        </fieldset>
+      : <label className="field">Correct answer<select name="answer" aria-label="Correct answer" value={answers[0] ?? ""} onChange={(event) => setAnswers(event.target.value ? [event.target.value] : [])}><option value="">Choose an answer</option>{options.map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label>}
     <label className="field">Explanation<Textarea name="explanation" value={explanation} onChange={(event) => setExplanation(event.target.value)} rows={3} maxLength={8000} /></label>
     <section className="grid gap-3">
       <h3 className="font-semibold">Classification</h3>

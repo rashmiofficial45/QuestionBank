@@ -11,7 +11,7 @@ export function TestAnswerSummary({ id, rows }: { id: string; rows: AnswerSummar
     <CardContent><Table aria-label="All test answers">
       <TableHeader><TableRow><TableHead>Question</TableHead><TableHead>Your answer</TableHead><TableHead>Correct answer</TableHead><TableHead>Result</TableHead></TableRow></TableHeader>
       <TableBody>{rows.map(({ selected, answer, correct }, index) => <TableRow key={index}>
-        <TableCell><Link className="text-link" href={`/practice/${id}?review=1&q=${index + 1}`} prefetch={false}>Question {index + 1}</Link></TableCell>
+        <TableCell><Link className="text-link" href={`/practice/${id}?review=1&q=${index + 1}`} prefetch={false} replace>Question {index + 1}</Link></TableCell>
         <TableCell className="max-w-xs whitespace-normal">{selected ?? "Unanswered"}</TableCell>
         <TableCell className="max-w-xs whitespace-normal">{answer}</TableCell>
         <TableCell><Badge variant="outline" className={correct === null ? undefined : correct ? "score-correct" : "score-incorrect"}>{correct === null ? "Unanswered" : correct ? "Correct" : "Incorrect"}</Badge></TableCell>
