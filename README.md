@@ -55,7 +55,11 @@ The Polity parser handles the sample paper's known two-column layout and renders
 
 The editor covers rectangular tables. Detected ambiguous or merged grids keep their source crops and a review flag. Scan clarity, table ruling, document rotation, and unfamiliar layouts can affect recognition. For an existing import with untouched source blocks, `worker/refresh_tables.py IMPORT_ID` upgrades verified table layouts while retaining question IDs, answers, edits to other fields, and attempts.
 
-The question bank supports inline grading, highlighted search matches, and numbered shadcn pagination. Practice runs a timed test with one question per screen, a scrollable navigator, saved selections, and optional marks for review. Submission reveals the score and correct answers. The default uses 60 minutes and two marks per correct answer, with one-third of the marks deducted for an incorrect answer. The start form can change those settings. Progress distinguishes practice attempts from question-bank activity and links back to the submitted test question.
+The question bank supports inline grading, highlighted search matches, and numbered shadcn pagination. The sidebar toggle saves its state in the browser. Practice runs a timed test with one question per screen, a scrollable navigator, saved selections, and optional marks for review. Maximize test hides the workspace navigation. Minimize test or Escape restores it.
+
+Submission opens Test ended with earned and total marks, accuracy, time taken, and a topic breakdown. Review answers opens the original questions and a table of selections, correct answers, and outcomes. Exit test returns to the practice setup and the most recent 20 scores. Deleting a review removes that test from the score table and keeps its individual attempts in Progress.
+
+The default test uses 60 minutes and two marks per correct answer, with one-third of the marks deducted for an incorrect answer. The setup form can change those settings. Progress distinguishes test attempts from question-bank activity and shows performance by subject and topic. Revision lists questions whose latest attempt was incorrect. A correct retry clears the question from the queue.
 
 The interface uses shadcn/ui with White and Black themes and semantic answer feedback. An explanation appears after grading when the saved question includes one.
 

@@ -2,7 +2,7 @@ import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/database";
-import { attempts, bookmarks, practiceSessions, questions } from "@/database/schema";
+import { attempts, bookmarks, practiceSessions, questions, questionVersions } from "@/database/schema";
 import type { Content } from "@/lib/content";
 
 const profileName = "question_bank_profile";
@@ -108,4 +108,25 @@ export async function questionBySlug(slug: string) {
 export async function nextQuestion(source: string, number: number) {
   return (await db.select({ slug: questions.slug }).from(questions).where(and(activeQuestion, eq(questions.source, source), sql`${questions.number} > ${number}`))
     .orderBy(questions.number).limit(1))[0];
+}
+
+export async function revisionQueue(profileId: string) {
+  const latest = db.selectDistinctOn([attempts.questionId], {
+    questionId: attempts.questionId, correct: attempts.correct, missedAt: attempts.createdAt,
+  }).from(attempts).where(eq(attempts.profileId, profileId))
+    .orderBy(attempts.questionId, desc(attempts.createdAt), desc(attempts.id)).as("latest_attempt");
+  return db.select({ ...listing, missedAt: latest.missedAt }).from(latest)
+    .innerJoin(questions, eq(questions.id, latest.questionId))
+    .where(and(activeQuestion, eq(latest.correct, false))).orderBy(desc(latest.missedAt), questions.id).limit(100);
+}
+
+export async function topicPerformance(profileId: string) {
+  return db.select({
+    subject: questionVersions.subject, topic: questionVersions.topic,
+    correct: sql<number>`count(*) filter (where ${attempts.correct})::int`,
+    incorrect: sql<number>`count(*) filter (where not ${attempts.correct})::int`,
+  }).from(attempts).innerJoin(questionVersions,
+    and(eq(questionVersions.questionId, attempts.questionId), eq(questionVersions.revision, attempts.revision)))
+    .where(eq(attempts.profileId, profileId)).groupBy(questionVersions.subject, questionVersions.topic)
+    .orderBy(questionVersions.subject, questionVersions.topic);
 }

@@ -1,18 +1,20 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { TopicPerformance } from "@/components/topic-performance";
 import { ResetForm } from "@/components/reset-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { progress, studyHistory } from "@/modules/study";
+import { getProfile, progress, studyHistory, topicPerformance } from "@/modules/study";
 
 export const metadata = { title: "Progress" };
 
 const dateFormat = new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" });
 
 export default async function ProgressPage() {
-  const [stats, history] = await Promise.all([progress(), studyHistory()]);
+  const profile = await getProfile();
+  const [stats, history, topics] = await Promise.all([progress(), studyHistory(), profile ? topicPerformance(profile) : []]);
   const accuracy = stats.total ? Math.round(stats.correct * 100 / stats.total) + "%" : "—";
 
   return <>
@@ -44,6 +46,7 @@ export default async function ProgressPage() {
         </Table> : <p className="text-sm text-muted-foreground">Answer a question to see your activity here.</p>}
       </CardContent>
     </Card>
+    <div className="mt-5"><TopicPerformance rows={topics} /></div>
     {(stats.total > 0 || stats.saved > 0) && <div className="mt-5"><ResetForm /></div>}
   </>;
 }

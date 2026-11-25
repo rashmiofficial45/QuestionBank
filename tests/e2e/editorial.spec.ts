@@ -56,6 +56,8 @@ test("publishes revisions independently of active tests and keeps editorial hist
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Submit test" }).click();
+  await expect(page.getByRole("heading", { name: "Test ended" })).toBeVisible();
+  await page.getByRole("link", { name: "Review answers" }).click();
   await expect(page.getByText(/2 \/ 2 points.*1 correct/)).toBeVisible();
   await expect(page.locator(".option-correct")).toContainText("Parliament");
 

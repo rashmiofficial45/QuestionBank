@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Check, Flag, Timer, X } from "lucide-react";
-import { finishPractice, saveResponse, startPractice } from "@/app/(student)/practice/actions";
+import { Check, Flag, Timer, Trash2, X } from "lucide-react";
+import { deleteTestReview, finishPractice, saveResponse, startPractice } from "@/app/(student)/practice/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -73,5 +73,13 @@ export function TestOptions({ id, questionId, options, response, answer, ended }
       <span aria-live="polite" className="text-sm text-muted-foreground">{pending ? "Saving…" : response.option ? "Answer saved" : ""}</span>
     </div>}
     {state.error && <p role="alert" className="form-error">{state.error}</p>}
+  </form>;
+}
+
+export function DeleteReview({ id }: { id: string }) {
+  return <form action={deleteTestReview.bind(null, id)} onSubmit={(event) => {
+    if (!window.confirm("Delete this test review? Individual attempts will stay in Progress.")) event.preventDefault();
+  }}>
+    <Button type="submit" variant="ghost" size="sm"><Trash2 />Delete review</Button>
   </form>;
 }

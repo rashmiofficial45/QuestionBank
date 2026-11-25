@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { TestHistory } from "@/components/test-history";
 import { redirect } from "next/navigation";
 import { PracticeSetup } from "@/components/practice-forms";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,11 +21,6 @@ export default async function PracticePage() {
       <CardHeader><CardTitle>Test settings</CardTitle></CardHeader>
       <CardContent>{papers.length ? <PracticeSetup papers={papers} /> : <p className="text-muted-foreground">Publish questions to start a test.</p>}</CardContent>
     </Card>
-    {history.length > 0 && <Card className="mt-5 shadow-none">
-      <CardHeader><CardTitle>Recent tests</CardTitle></CardHeader>
-      <CardContent><ul className="grid gap-2">{history.map((test) => <li key={test.id}>
-        <Link className="text-link" href={`/practice/${test.id}`}>Review {test.manifest.length}-question test from {test.submittedAt?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}</Link>
-      </li>)}</ul></CardContent>
-    </Card>}
+    <TestHistory history={history} />
   </>;
 }

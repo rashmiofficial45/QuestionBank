@@ -23,6 +23,7 @@ export async function submitAnswer(questionId: string, revision: number, mode: "
   await db.insert(attempts).values({ profileId, questionId, optionId: choice.data, revision, correct, mode });
   revalidatePath("/");
   revalidatePath("/progress");
+  revalidatePath("/revision");
   return { correct, selected: choice.data, answer: question.content.answer, explanation: question.content.explanation };
 }
 

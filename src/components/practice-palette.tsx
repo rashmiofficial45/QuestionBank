@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 
 type Entry = { answered: boolean; marked: boolean; correct?: boolean };
 
-export function PracticePalette({ id, index, entries }: { id: string; index: number; entries: Entry[] }) {
+export function PracticePalette({ id, index, entries, reviewing = false }: { id: string; index: number; entries: Entry[]; reviewing?: boolean }) {
   const rail = useRef<HTMLDivElement>(null);
   const active = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
@@ -28,7 +28,7 @@ export function PracticePalette({ id, index, entries }: { id: string; index: num
         const selected = position === index;
         const status = correct !== undefined ? correct ? "correct" : "incorrect" : answered ? "answered" : "unanswered";
         return <Link className="test-step" data-state={status} data-marked={marked || undefined}
-          href={`/practice/${id}?q=${position + 1}`} ref={selected ? active : undefined} key={position}
+          href={`/practice/${id}?${reviewing ? "review=1&" : ""}q=${position + 1}`} ref={selected ? active : undefined} key={position}
           aria-current={selected ? "step" : undefined} aria-label={`Question ${position + 1}, ${status}${marked ? ", marked for review" : ""}`}
           prefetch={false}>{position + 1}</Link>;
       })}

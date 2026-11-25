@@ -23,7 +23,9 @@
 
 ## 4. Study experience
 
-- [ ] Add remaining question formats, dedicated revision tools, and topic analytics. Verify grading, history, and mobile workflows.
+- [x] Add a collapsible sidebar, test focus mode, a separate results and review flow, and deletable score history.
+- [x] Add a revision queue and performance by subject and topic. Verify scoring, review deletion, and retry behavior in the browser.
+- [ ] Extend the supported question formats.
 - [ ] Review student features with the user.
 
 ## 5. Release readiness

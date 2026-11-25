@@ -209,7 +209,7 @@ h2 { font-size: 20px; font-weight: 665; letter-spacing: -.035em; }
 }
 @media (max-width: 570px) {
   .workspace { padding-inline: 14px; }
-  .navigation[aria-label="Study"] { display: grid; grid-template-columns: .95fr 1.2fr .9fr 1.05fr .9fr; overflow: visible; }
+  .navigation[aria-label="Study"] { display: grid; grid-template-columns: .9fr 1.22fr .85fr .9fr 1fr .9fr; overflow: visible; }
   .navigation[aria-label="Study"] a { flex-direction: column; justify-content: center; gap: 4px; min-height: 46px; padding: 4px 1px; font-size: 10px; }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0 24px; }
   .metrics-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -311,3 +311,16 @@ h2 { font-size: 20px; font-weight: 665; letter-spacing: -.035em; }
 .test-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .editor-option { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: start; }
 .editor-option-actions { grid-column: 2; display: flex; gap: 5px; }
+.shell-crumb { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.shell[data-collapsed], .shell[data-test-focus] { grid-template-columns: minmax(0, 1fr); }
+.shell[data-collapsed] .sidebar, .shell[data-test-focus] .sidebar, .shell[data-test-focus] .topbar { display: none; }
+.shell[data-collapsed] .workspace { max-width: none; }
+.shell[data-test-focus] .workspace { max-width: none; padding: clamp(12px, 2.5vw, 30px); }
+.shell[data-test-focus] .test-workspace { min-height: calc(100dvh - clamp(24px, 5vw, 60px)); }
+.test-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.test-results .metrics { margin: 0; }
+.test-results .dashboard-metric { padding: 0; }
+.test-history-table td { padding-block: 14px; font-size: 14px; }
+.test-history-table th { padding-block: 9px; font-size: 13px; }
+.score-correct { color: var(--answer-right); background: var(--answer-right-bg); border-color: var(--answer-right-border); }
+.score-incorrect { color: var(--answer-wrong); background: var(--answer-wrong-bg); border-color: var(--answer-wrong-border); }

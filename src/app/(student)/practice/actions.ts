@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -83,5 +83,21 @@ export async function finishPractice(id: string) {
   revalidatePath("/");
   revalidatePath("/progress");
   revalidatePath("/practice");
+  revalidatePath("/revision");
   redirect(`/practice/${id}`);
+}
+
+export async function deleteTestReview(id: string) {
+  const profileId = await getProfile();
+  if (!profileId || !z.uuid().safeParse(id).success) return;
+  await db.transaction(async (tx) => {
+    const predicate = and(eq(practiceSessions.id, id), eq(practiceSessions.profileId, profileId), isNotNull(practiceSessions.submittedAt));
+    const [session] = await tx.select({ id: practiceSessions.id }).from(practiceSessions).where(predicate).for("update");
+    if (!session) return;
+    await tx.update(attempts).set({ sessionId: null }).where(and(eq(attempts.sessionId, id), eq(attempts.profileId, profileId)));
+    await tx.delete(practiceSessions).where(predicate);
+  });
+  revalidatePath("/practice");
+  revalidatePath("/progress");
+  revalidatePath("/revision");
 }

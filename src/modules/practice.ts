@@ -1,16 +1,29 @@
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { scoreCounts } from "@/lib/practice-scoring";
 import { db } from "@/database";
-import { practiceSessions, questions, questionVersions, type TestQuestion } from "@/database/schema";
+import { attempts, practiceSessions, questions, questionVersions, type TestQuestion } from "@/database/schema";
 
 export function activeSession(profileId: string) {
   return db.select().from(practiceSessions).where(and(eq(practiceSessions.profileId, profileId), isNull(practiceSessions.submittedAt))).limit(1)
     .then(([session]) => session);
 }
 
-export function recentSessions(profileId: string) {
-  return db.select({ id: practiceSessions.id, submittedAt: practiceSessions.submittedAt, manifest: practiceSessions.manifest })
-    .from(practiceSessions).where(and(eq(practiceSessions.profileId, profileId), isNotNull(practiceSessions.submittedAt)))
-    .orderBy(desc(practiceSessions.submittedAt)).limit(5);
+export async function recentSessions(profileId: string) {
+  const sessions = await db.select({
+    id: practiceSessions.id, submittedAt: practiceSessions.submittedAt,
+    correctPoints: practiceSessions.correctPoints, wrongPoints: practiceSessions.wrongPoints,
+    total: sql<number>`jsonb_array_length(${practiceSessions.manifest})`,
+    source: sql<string | null>`(select case when count(distinct q.source) = 1 then min(q.source) end
+      from jsonb_array_elements(${practiceSessions.manifest}) as item(value)
+      join ${questions} q on q.id = (item.value->>'id')::uuid)`,
+    correct: sql<number>`count(${attempts.id}) filter (where ${attempts.correct})::int`,
+    incorrect: sql<number>`count(${attempts.id}) filter (where not ${attempts.correct})::int`,
+  }).from(practiceSessions).leftJoin(attempts, and(eq(attempts.sessionId, practiceSessions.id), eq(attempts.profileId, profileId)))
+    .where(and(eq(practiceSessions.profileId, profileId), isNotNull(practiceSessions.submittedAt)))
+    .groupBy(practiceSessions.id).orderBy(desc(practiceSessions.submittedAt), desc(practiceSessions.id)).limit(20);
+  return sessions.map(({ correct, incorrect, total, correctPoints, wrongPoints, ...item }) => ({
+    ...item, total, score: scoreCounts(correct, incorrect, total, correctPoints, wrongPoints),
+  }));
 }
 
 export function ownedSession(id: string, profileId: string) {
@@ -32,6 +45,7 @@ export function practiceVersions(manifest: TestQuestion[]) {
     revision: questionVersions.revision,
     content: questionVersions.content,
     subject: questionVersions.subject,
+    topic: questionVersions.topic,
     source: questions.source,
     number: questions.number,
     importId: questions.importId,
