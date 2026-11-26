@@ -223,7 +223,10 @@ def embedded_prompt_images(stem, options, page_images, polity):
         if first_option and (first_option.page, first_option.column) == (page, column):
             bottom = first_option.box.y0
         for image in page_images.get(page, []):
-            if top <= image.y0 and image.y1 <= bottom and (not polity or int(center(image).x >= 300) == column):
+            # The verified Polity layout places question content inside one column.
+            # Page-wide overlays such as the repeated watermark are not prompt images.
+            within_column = not polity or (image.x0 >= 300 if column else image.x1 <= 300)
+            if top <= image.y0 and image.y1 <= bottom and within_column:
                 images.setdefault((page, column), []).append(image)
     return images
 

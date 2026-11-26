@@ -7,9 +7,9 @@
 | 1. Architecture and project setup | Complete |
 | 2. PDF ingestion and validation | Complete for the initial workflow. Later document layouts and explanation imports remain in the backlog. |
 | 3. Editorial administration | Core workflows implemented and verified. The user walkthrough is pending. |
-| 4. Question bank and practice | In progress. Additional question formats remain. |
-| 5. Study tools and analytics | Started. Bookmarks, progress, revision, and topic analytics are available. |
-| 6. Release verification | Pending. Integration and browser regressions run during each increment. |
+| 4. Question bank and practice | Core formats implemented. Advanced PDF layout reconstruction and rich answer options remain. |
+| 5. Study tools and analytics | Core workflows available. Includes study notes, activity, streaks, subject and topic performance, and saved-test time and skips. |
+| 6. Release verification | Local build, browser, database and extraction checks run. Live Docker verification remains open. |
 
 ## 1. Working MVP preview
 
@@ -43,10 +43,15 @@
 - [x] Import, edit, filter, and grade True/False questions with explicit source options.
 - [x] Preserve statement lists and source labels in imports, support editorial edits, and filter and grade statement-based questions.
 - [x] Import, edit, filter, and grade explicitly labeled Assertion–Reason questions.
-- [ ] Extend the remaining question formats.
+- [x] Add written and numerical grading, descriptive self-assessment, interactive pairs and ordering, and typed passage, code, and equation rendering.
+- [x] Preserve embedded native prompt images with zoomable original crops.
+- [x] Add browser-local notes and measured study activity, streaks, weak topics, and subject analytics.
+- [ ] Extend rich answer options and automatic reconstruction of advanced PDF layouts.
 - [ ] Review student features with the user.
 
 ## 5. Release readiness
 
-- [ ] Verify Docker deployment, recovery, accessibility, visual regressions, and performance benchmarks.
+- [x] Verify a local backup and restore, benchmark search and extraction, and compare table snapshots at desktop and phone widths.
+- [ ] Run Docker Compose and verify the import and persistence checks on a Docker host.
+- [ ] Extend visual and accessibility coverage to all advanced formats and run an independent security review.
 - [ ] Review production readiness with the user.

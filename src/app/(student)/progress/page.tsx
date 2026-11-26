@@ -49,9 +49,9 @@ export default async function ProgressPage() {
       <CardHeader><CardTitle><h2>Study activity</h2></CardTitle></CardHeader>
       <CardContent className="grid gap-4">
         <dl className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
-          <div><dt className="text-muted-foreground">Last 7 days</dt><dd className="font-semibold">{usage.week} attempts</dd></div>
-          <div><dt className="text-muted-foreground">Last 30 days</dt><dd className="font-semibold">{usage.month} attempts</dd></div>
-          <div><dt className="text-muted-foreground">Study streak</dt><dd className="font-semibold">{usage.streak} days</dd></div>
+          <div><dt className="text-muted-foreground">Last 7 days</dt><dd className="font-semibold">{usage.week} {usage.week === 1 ? "attempt" : "attempts"}</dd></div>
+          <div><dt className="text-muted-foreground">Last 30 days</dt><dd className="font-semibold">{usage.month} {usage.month === 1 ? "attempt" : "attempts"}</dd></div>
+          <div><dt className="text-muted-foreground">Study streak</dt><dd className="font-semibold">{usage.streak} {usage.streak === 1 ? "day" : "days"}</dd></div>
         </dl>
         {usage.month > 0 ? <>
           <ActivityChart data={usage.recent} />

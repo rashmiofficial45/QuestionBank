@@ -2,11 +2,11 @@
 
 import { ArrowRight, Check, CircleCheck, RotateCcw, X } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import { SearchHighlight } from "@/components/search-highlight";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { submitAnswer } from "@/app/(student)/actions";
+import { submitAnswer, type AnswerState } from "@/app/(student)/actions";
 import type { Content } from "@/lib/content";
 import { choiceIds } from "@/lib/choice-selection";
 import { isWritten, type WrittenInteraction } from "@/lib/written-answer";
@@ -44,14 +44,21 @@ function RankedRound({ id, revision, mode = "bank", options, prompts, retry, nex
 }
 
 function WrittenRound({ id, revision, interaction, mode = "bank", retry, next }: Props & { interaction: WrittenInteraction; retry: () => void }) {
-  const [result, action, pending] = useActionState(submitAnswer.bind(null, id, revision, mode), {});
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  const [result, setResult] = useState<AnswerState>({});
+  const [pending, startSubmission] = useTransition();
   const descriptive = interaction === "descriptive";
-  return <form action={action} className="answer-form grid gap-3">
+  return <form className="answer-form grid gap-3" onSubmit={(event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    startSubmission(async () => setResult(await submitAnswer(id, revision, mode, {}, data)));
+  }}>
     <label className="field">Your response
       <Textarea name="option" aria-label="Your response" key={result.answer ? "review" : "response"}
         defaultValue={typeof result.selected === "string" ? result.selected : ""}
         inputMode={interaction === "numeric" ? "decimal" : undefined} rows={descriptive ? 5 : 2} maxLength={8000}
-        readOnly={Boolean(result.answer)} required />
+        disabled={!ready} readOnly={Boolean(result.answer)} required />
     </label>
     {result.error && <p className="form-error" role="alert">{result.error}</p>}
     {result.answer ? <>
@@ -63,7 +70,7 @@ function WrittenRound({ id, revision, interaction, mode = "bank", retry, next }:
       {result.explanation && <details className="source-text"><summary>Explanation</summary><p>{result.explanation}</p></details>}
       <div className="form-actions"><Button type="button" variant="outline" onClick={retry}>Try again</Button>
         {next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</div>
-    </> : <Button type="submit" disabled={pending} className="justify-self-start">{descriptive ? "Reveal reference answer" : "Check answer"}</Button>}
+    </> : <Button type="submit" disabled={!ready || pending} className="justify-self-start">{descriptive ? "Reveal reference answer" : "Check answer"}</Button>}
   </form>;
 }
 

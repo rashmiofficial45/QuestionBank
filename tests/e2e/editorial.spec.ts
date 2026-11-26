@@ -371,8 +371,14 @@ test("publishes written answers, grades decimals, and tracks study activity", as
   await page.goto(`/questions?${new URLSearchParams({ format: "descriptive", source: title })}`);
   await page.getByRole("link", { name: "Question 2", exact: true }).click();
   await expect(page.getByText("A reference answer for self-assessment.")).toHaveCount(0);
-  await page.getByLabel("Your response").fill("My draft response.");
-  await page.getByRole("button", { name: "Reveal reference answer" }).click();
+  const written = page.getByRole("textbox", { name: "Your response", exact: true });
+  await written.fill("My draft response.");
+  await expect(written).toHaveValue("My draft response.");
+  const [reveal] = await Promise.all([
+    page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.startsWith("/questions/")),
+    page.getByRole("button", { name: "Reveal reference answer" }).click(),
+  ]);
+  expect(reveal.ok()).toBe(true);
   await expect(page.getByText("A reference answer for self-assessment.")).toBeVisible();
   await page.getByText("Study note", { exact: true }).click();
   await page.getByRole("textbox", { name: "Study note" }).fill("Practice explaining the reasoning.");

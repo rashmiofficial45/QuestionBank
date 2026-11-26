@@ -19,16 +19,16 @@ The supplied Polity paper yielded 50 questions and 200 options in both runs. The
 
 | Input | Extractor elapsed | Python peak RSS |
 | --- | ---: | ---: |
-| Original text PDF | 0.84 s | 85.0 MiB |
+| Original text PDF | 0.92 s | 79.2 MiB |
 | 240 DPI raster-only copy | 33.19 s | 167.8 MiB |
 
-RSS covers the Python process. Tesseract runs separately. Extraction timings exclude upload, the queue, asset file writes, and publication. The benchmark does not establish concurrent traffic capacity.
+RSS covers the Python process. Tesseract runs separately. Extraction timings exclude upload, the queue, asset file writes, and publication. With eight concurrent application readers and the raster extractor running on the same host, 200 mixed broad and selective searches measured 110.69 ms p50 and 706.30 ms p95. That extraction took 38.01 seconds. This is a bounded local concurrency check.
 
 ## Repeat the checks
 
-Create a disposable, empty PostgreSQL database named `question_bank_benchmark`, run migrations with its `DATABASE_URL`, then use `pnpm exec tsx scripts/benchmark-search.ts`. Run `PYTHONPATH=worker .venv/bin/python scripts/benchmark-extraction.py <paper> <key>` for each PDF pair.
+Create a disposable, empty PostgreSQL database named `question_bank_benchmark`, run migrations with its `DATABASE_URL`, then use `pnpm exec tsx scripts/benchmark-search.ts`. Run `PYTHONPATH=worker .venv/bin/python scripts/benchmark-extraction.py <paper> <key>` for each PDF pair. To exercise local concurrency, add `--concurrent` to the search benchmark after seeding and run it during raster extraction.
 
-The browser suite covers editable draft isolation, publication, desktop and mobile, Black and White modes, keyboard navigation, grading, and answer-key revisions. Set `PREVIEW_SCREENSHOT_DIR` to capture review images. The visual checks are manual screenshot review and browser layout assertions. Automated pixel baselines remain pending.
+The browser suite covers editable draft isolation, publication, desktop and mobile, Black and White modes, keyboard navigation, grading, and answer-key revisions. Set `PREVIEW_SCREENSHOT_DIR` to capture review images. Run `VISUAL_REGRESSION=1 CHROME_CHANNEL=chrome pnpm test:e2e tests/e2e/visual.spec.ts` to compare the table-question layout against the checked-in macOS Chrome desktop and mobile baselines. Baselines for the other advanced views and for other operating systems remain pending.
 
 ## Recovery and deployment
 
@@ -40,4 +40,4 @@ The Compose manifest was parsed locally. It defines a one-shot migration service
 
 ## Security boundary
 
-The supported editor runs on loopback or inside a restricted operator network. Public deployments must set `ENABLE_PRIVATE_ADMIN=0` and keep administrative routes and the source storage volume private. The application has no user login. An anonymous browser cookie associates attempts, notes, and bookmarks with the current browser. Uploads are size-bounded and checked for a PDF signature. The worker limits pages and raster dimensions and processes files locally. Equation rendering disables trusted KaTeX commands and falls back to text on parse errors. Independent security testing and concurrent traffic testing remain release gates.
+The supported editor runs on loopback or inside a restricted operator network. Public deployments must set `ENABLE_PRIVATE_ADMIN=0` and keep administrative routes and the source storage volume private. The local public-mode check returned 404 for `/admin`, `/admin/imports`, and `/admin/imports/new`, and 200 for the question bank and readiness endpoint. The runtime dependency audit reported zero matching advisories. The application has no user login. An anonymous browser cookie associates attempts, notes, and bookmarks with the current browser. Uploads are size-bounded and checked for a PDF signature. The worker limits pages and raster dimensions and processes files locally. Equation rendering disables trusted KaTeX commands and falls back to text on parse errors. Independent security and production traffic tests remain release gates.
