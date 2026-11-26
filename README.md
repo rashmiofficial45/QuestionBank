@@ -1,6 +1,6 @@
 # Study Atlas
 
-Study Atlas is a local question bank and editorial workspace for civil services preparation. Study Atlas supports paired or combined PDF uploads, optional explanation PDFs, asynchronous extraction, read-only review, draft editing, publication, and student practice.
+Study Atlas is a local question bank and editorial workspace for civil services preparation. Study Atlas supports question paper and detailed answer PDF uploads, asynchronous extraction, read-only review, draft editing, publication, and student practice.
 
 ## Local preview
 
@@ -27,7 +27,7 @@ set +a
 .venv/bin/python worker/main.py
 ```
 
-Visit [the student workspace](http://127.0.0.1:3000/) or [PDF imports](http://127.0.0.1:3000/admin/imports). Upload a question paper and its separate answer key, or use a single PDF with an **Answer Key** heading at the top of a separate page. An optional explanation PDF can use headings like `Explanation 1:` or `1. Explanation:`. The worker matches those explanations by question number and flags them for editorial verification. Open **Review** for a read-only comparison with the original, **Edit** to save a draft, or **Publish** to send eligible questions to the student bank. Student answers are graded on the server and attempts and bookmarks are associated with a browser cookie.
+Visit [the student workspace](http://127.0.0.1:3000/) or [PDF imports](http://127.0.0.1:3000/admin/imports). Upload the question paper and a detailed answer PDF that starts with the answer key and follows it with numbered solutions headed `Q1.`, `Answer:`, and `Explanation:`. A standalone answer key is optional and is cross-checked when supplied. The worker matches solutions by question number, verifies the answer labels, and keeps images of the original explanation pages. Open **Review** for a read-only source comparison, **Edit** to save a draft, or **Publish** to send eligible questions to the student bank. Detailed explanations open after grading and are available in submitted test reviews. Attempts and bookmarks are associated with a browser cookie.
 
 ## Deployment boundary
 
@@ -47,7 +47,7 @@ pnpm exec playwright install chromium
 POLITY_FIXTURE_DIR=/path/to/fixtures pnpm test:e2e
 ```
 
-The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf` and `Test-01-Polity-01-Answer-Key-23-Nov-.pdf`. Use a review database for this end-to-end test because it publishes the sample import. Set `CHROME_CHANNEL=chrome` to use installed Chrome. For additional OCR coverage, set `SCAN_FIXTURE_DIR` to a directory containing `scanned-paper.pdf` and `scanned-answer-key.pdf`. Set `POLITY_RASTER_FIXTURE_DIR` to include a full rasterized Polity regression in Pytest and Playwright. That directory should contain `polity-raster.pdf` and `polity-key-raster.pdf`. The test helpers in `worker/tests/test_extract.py` rasterize a PDF at 240 DPI with no native text layer.
+The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf`, `Test-01-Polity-01-Answer-Key-23-Nov-.pdf`, and `Test-01-Polity-01-Detailed-Explaination-23-Nov-.pdf`. Use a review database for this end-to-end test because it publishes the sample import. Set `CHROME_CHANNEL=chrome` to use installed Chrome. For additional OCR coverage, set `SCAN_FIXTURE_DIR` to a directory containing `scanned-paper.pdf` and `scanned-answer-key.pdf`. Set `POLITY_RASTER_FIXTURE_DIR` to include a full rasterized Polity regression in Pytest and Playwright. That directory should contain `polity-raster.pdf` and `polity-key-raster.pdf`. The test helpers in `worker/tests/test_extract.py` rasterize a PDF at 240 DPI with no native text layer.
 
 ## MVP coverage
 

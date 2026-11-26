@@ -88,6 +88,7 @@ const question = z.object({
   blocks: z.array(z.discriminatedUnion("type", [paragraph, statements, assertionReason, crop, table, image])).min(1).max(100),
   options: z.array(optionSchema).max(12),
   explanation: z.string().trim().max(8000),
+  explanationCrops: z.array(z.object({ page: z.number().int().positive(), file: z.string().regex(/^answer-\d+-\d+\.png$/) })).max(100).optional(),
 });
 export const questionSchema = z.discriminatedUnion("interaction", [
   question.extend({ interaction: z.literal("single_choice"), answer: z.string().nullable() }),

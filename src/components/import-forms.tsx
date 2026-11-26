@@ -57,10 +57,10 @@ export function UploadForm() {
       <label className="field">Subject <Input name="subject" required maxLength={60} placeholder="Polity" /></label>
     </div>
     <PdfFileField name="paper" label="Question paper PDF" required disabled={pending} />
-    <PdfFileField name="key" label="Answer key PDF" disabled={pending}
-      hint="Leave this empty if the paper has a separate page that starts with “Answer Key”." />
-    <PdfFileField name="explanations" label="Explanation PDF (optional)" disabled={pending}
-      hint="Use numbered headings such as “Explanation 1” followed by a colon." />
+    <PdfFileField name="key" label="Answer key only PDF (optional)" disabled={pending}
+      hint="Attach a separate key only if you want to cross-check the answers." />
+    <PdfFileField name="detailed" label="Answer key with detailed explanations PDF" required disabled={pending}
+      hint="Upload one PDF with the answer key first and the numbered explanations after it." />
     {state.error && <p className="form-error" role="alert">{state.error}</p>}
     <div><Button type="submit" disabled={pending}><FileUp size={17} />{pending ? "Uploading…" : "Upload and process"}</Button></div>
   </form>;

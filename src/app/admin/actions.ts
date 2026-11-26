@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/database";
 import { drafts, editorialEvents, imports, questions, questionVersions } from "@/database/schema";
+import { choiceIds } from "@/lib/choice-selection";
 import { optionSchema, publicationIssues, questionSchema } from "@/lib/content";
 import { isWritten } from "@/lib/written-answer";
 import { isRanked } from "@/lib/ranked-answer";
@@ -34,15 +35,14 @@ export async function uploadPapers(_previous: FormStatus, form: FormData): Promi
   const meta = uploadMeta.safeParse({ title: form.get("title"), subject: form.get("subject") });
   if (!meta.success) return { error: "Enter a paper title and a subject." };
   const keyInput = form.get("key");
-  const optional = form.get("explanations");
-  const [paper, key, explanations] = await Promise.all([validPDF(form.get("paper")), validPDF(keyInput), validPDF(optional)]);
+  const [paper, key, detailed] = await Promise.all([validPDF(form.get("paper")), validPDF(keyInput), validPDF(form.get("detailed"))]);
   if (!paper || (fileProvided(keyInput) && !key)) return { error: "Select valid paper and answer key PDFs up to 10 MB each." };
-  if (fileProvided(optional) && !explanations) return { error: "Select an explanation PDF up to 10 MB, or leave it empty." };
+  if (!detailed) return { error: "Attach the PDF containing both the answer key and detailed explanations (up to 10 MB)." };
   const id = crypto.randomUUID();
   const directory = join(storageRoot(), id);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   try {
-    for (const [name, file] of [["paper.pdf", paper], ["key.pdf", key], ["explanations.pdf", explanations]] as const) {
+    for (const [name, file] of [["paper.pdf", paper], ["key.pdf", key], ["detailed.pdf", detailed]] as const) {
       if (!file) continue;
       const handle = await open(join(directory, name), "wx", 0o600);
       try {
@@ -59,7 +59,7 @@ export async function uploadPapers(_previous: FormStatus, form: FormData): Promi
     await db.transaction(async (tx) => {
       await tx.insert(imports).values({ id, ...meta.data, paperName: paper.name.slice(0, 255), keyName: key?.name.slice(0, 255) ?? "" });
       await tx.insert(editorialEvents).values({ importId: id, type: "Uploaded",
-        detail: `Queued ${key ? "the question paper and separate answer key" : "the combined question and answer PDF"}${explanations ? " with explanations" : ""}.` });
+        detail: "Queued the question paper and the detailed answer PDF." });
     });
   } catch (error) {
     console.error(JSON.stringify({ event: "import.queue_failed", id, reason: error instanceof Error ? error.name : "unknown" }));
@@ -104,6 +104,7 @@ export async function saveDraft(importId: string, id: string, generation: number
     const sequence = ranked ? String(form.get("sequence") ?? "").split(",").map((label) =>
       optionInputs.data.find((option) => option.label.toLowerCase() === label.trim().toLowerCase())?.id ?? ""
     ) : [];
+    const answer = ranked ? sequence : interaction === "multiple_choice" ? answers : answers[0] || null;
     let blocks: unknown;
     try { blocks = JSON.parse(String(form.get("blocks"))); }
     catch { return { error: "The question blocks could not be read." }; }
@@ -113,11 +114,19 @@ export async function saveDraft(importId: string, id: string, generation: number
       options: optionInputs.data,
       interaction,
       presentation: (form.get("presentation") ?? draft.content.presentation) || undefined,
-      answer: ranked ? sequence : interaction === "multiple_choice" ? answers : answers[0] || null,
+      answer,
       prompts: interaction === "pair_matching" ? String(form.get("prompts") ?? "").split("\n").map((line) => line.trim()).filter(Boolean) : undefined,
       explanation: form.get("explanation"),
     });
     if (!content.success) return { error: "Check question text, image descriptions, merged cells, and answer options." };
+    const originalAnswer = choiceIds(draft.original.answer);
+    const savedAnswer = choiceIds(content.data.answer);
+    if (originalAnswer.length > 0 && originalAnswer.length === savedAnswer.length &&
+      originalAnswer.every((id) => savedAnswer.includes(id))) {
+      content.data.explanationCrops = draft.original.explanationCrops;
+    } else {
+      delete content.data.explanationCrops;
+    }
     const sourceCrops = new Set(draft.content.blocks.filter((block) => block.type === "source_crop").map((block) => `${block.page}:${block.file}`));
     if (content.data.blocks.some((block) => block.type === "source_crop" && !sourceCrops.has(`${block.page}:${block.file}`))) {
       return { error: "Source crops must belong to this question." };

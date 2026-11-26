@@ -51,7 +51,7 @@ export default async function DrillSession({ params, searchParams }: {
     <QuestionContent blocks={content.blocks} importId={question.importId} testSessionId={id} />
     <AnswerForm key={pinned.id} drillId={id} id={pinned.id} revision={pinned.revision} interaction={content.interaction} options={content.options}
       importId={question.importId} testSessionId={id} prompts={content.interaction === "pair_matching" ? content.prompts : undefined}
-      initialResult={previous?.answered || drill.submittedAt ? { answer: content.answer ?? undefined, selected: previous?.selected, correct: previous?.correct, explanation: content.explanation } : undefined} />
+      initialResult={previous?.answered || drill.submittedAt ? { answer: content.answer ?? undefined, selected: previous?.selected, correct: previous?.correct, explanation: content.explanation, explanationCrops: content.explanationCrops } : undefined} />
     <div className="form-actions">
       {number > 1 && <Button asChild variant="outline"><Link href={`${path}?q=${number - 1}`}>Previous</Link></Button>}
       {number < drill.manifest.length && <Button asChild variant="outline"><Link href={`${path}?q=${number + 1}`}>Next question</Link></Button>}

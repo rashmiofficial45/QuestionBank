@@ -1,3 +1,4 @@
+import { DetailedExplanation } from "@/components/detailed-explanation";
 import { ArrowLeft, ArrowRight, Bookmark, BookmarkCheck } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -110,7 +111,8 @@ export default async function TestPage({ params, searchParams }: { params: Promi
       <TestOptions importId={question.importId} key={pinned.id} id={id} questionId={pinned.id} options={question.content.options} interaction={question.content.interaction} response={response}
         prompts={question.content.interaction === "pair_matching" ? question.content.prompts : undefined}
         ended={submitted} answer={submitted ? question.content.answer : undefined} />
-      {submitted && question.content.explanation && <details className="source-text"><summary>Explanation</summary><p>{question.content.explanation}</p></details>}
+      {submitted && <DetailedExplanation text={question.content.explanation} crops={question.content.explanationCrops}
+        importId={question.importId} sessionId={id} open />}
     </article>
     <footer className="test-footer">
       {previous ? <Button asChild variant="outline"><Link href={previous} replace aria-keyshortcuts="ArrowLeft"><ArrowLeft />Previous</Link></Button>

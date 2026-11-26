@@ -18,8 +18,11 @@ export async function requireAdmin() {
 
 export const storageRoot = () => resolve(process.env.STORAGE_DIR ?? ".data");
 
-export async function hasExplanationPDF(id: string) {
-  return stat(resolve(storageRoot(), id, "explanations.pdf")).then((file) => file.isFile(), () => false);
+export async function explanationPDF(id: string) {
+  for (const name of ["detailed.pdf", "explanations.pdf"] as const) {
+    if (await stat(resolve(storageRoot(), id, name)).then((file) => file.isFile(), () => false)) return name;
+  }
+  return null;
 }
 
 export function recentImports() {

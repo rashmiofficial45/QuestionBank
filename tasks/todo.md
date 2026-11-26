@@ -20,7 +20,7 @@ These section numbers follow the 38-section brief. The six implementation phases
 | 1–2. Product and scope | PDF-to-practice workflow, anonymous progress, and private editorial access. |
 | 3–5. Stack, architecture, and organization | Next.js, PostgreSQL, and a separate Python job worker run locally. PDF.js is used for editorial source review. Extraction uses PyMuPDF and Tesseract. |
 | 6. Admin console | Dashboard, import and retry history, draft editing, classification, publication, and revisions. Taxonomy, default scoring settings, and duplicate review have dedicated admin screens. |
-| 7. PDF upload | Separate or combined paper and answer key, plus an optional explanation PDF. CSV and JSON import/export and standalone manual drafts share the editorial workflow. |
+| 7. PDF upload | The question paper and the combined key and explanation PDF are required. A standalone key is optional and cross-checked. CSV and JSON import/export and standalone manual drafts share the editorial workflow. |
 | 8. PDF processing pipeline | Persistent jobs with leases, progress, retry, OCR, answer mapping, and explanation extraction. Retries reuse completed page analysis. Duplicate review matches normalized questions across imports. |
 | 9. High-fidelity parsing | Verified Polity profile, multi-page and clear mixed-column reading order, source regions, alphabetic/numeric/Roman choices, and geometry-backed merged tables. |
 | 10. Question formats | Supported formats include image and equation choices. Automatic extraction of arbitrary diagrams, graphs, shared passages, and formulas remains limited. |

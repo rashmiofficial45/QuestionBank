@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { EditorialHistory } from "@/components/editorial-history";
 import { Button } from "@/components/ui/button";
+import { DetailedExplanation } from "@/components/detailed-explanation";
 import { SourcePdf } from "@/components/source-pdf";
 import { OptionContent } from "@/components/option-content";
 import { QuestionContent } from "@/components/question-content";
@@ -16,7 +17,7 @@ import { isWritten } from "@/lib/written-answer";
 import { rankedLabels } from "@/components/ranked-fields";
 import { displayText } from "@/modules/study";
 import { getTaxonomy } from "@/modules/editorial-settings";
-import { getDrafts, getImport, hasExplanationPDF } from "@/modules/imports";
+import { getDrafts, getImport, explanationPDF } from "@/modules/imports";
 import { publishImport, retryImport } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
   if (!z.uuid().safeParse(id).success) notFound();
   const paper = await getImport(id);
   if (!paper) notFound();
-  const explanationPDF = await hasExplanationPDF(id);
+  const explanationSource = await explanationPDF(id);
   const rows = paper.status === "ready" ? await getDrafts(id) : [];
   const checked = rows.map((draft) => {
     const parsed = questionSchema.safeParse(draft.content);
@@ -85,7 +86,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
           {selected.page > 0 && <section className="panel bank-panel">
             <div className="section-heading"><div><h2>Original paper</h2><p>PDF page {selected.page}</p></div><a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/paper.pdf#page=${selected.page}`}>Open PDF <ArrowUpRight size={15} /></a></div>
             {paper.keyName && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/key.pdf`}>Open answer key <ArrowUpRight size={15} /></a>}
-            {explanationPDF && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/explanations.pdf`}>Open explanation PDF <ArrowUpRight size={15} /></a>}
+            {explanationSource && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/${explanationSource}`}>Open explanation PDF <ArrowUpRight size={15} /></a>}
             <SourcePdf url={`/api/v1/source/${id}/paper.pdf`} sourcePage={selected.page} questionNumber={selected.number} sourceText={displayText(selected.original).split("\n")[0] ?? ""} regions={selected.original.sourceRegions ?? selected.original.blocks.flatMap((block) => block.type === "table" ? [{ page: block.page, bounds: block.bounds }] : [])} />
           </section>}
           <section className="panel bank-panel">
@@ -95,6 +96,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
               {selected.published && <p className="notice">Changes are saved to a draft. Students see revision {selected.publishedRevision} until you publish again.</p>}
               <EditForm key={selected.id} content={selected.content} importId={id} id={selected.id} issues={selected.issues} generation={selected.generation}
                 catalog={await getTaxonomy()} classification={{ subject: selected.subject ?? paper.subject, topic: selected.topic ?? "General", difficulty: selected.difficulty ?? "Unrated", tags: selected.tags }} />
+              <DetailedExplanation crops={selected.original.explanationCrops} importId={id} administrative />
               </> : <>
                 <QuestionContent blocks={selected.content.blocks} importId={id} administrative />
                 {isWritten(selected.content.interaction) ? <p className="notice whitespace-pre-wrap"><strong>Reference answer</strong> {selected.content.answer}</p>
@@ -104,7 +106,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
                   const correct = choiceIds(selected.content.answer).includes(option.id);
                   return <li key={`${option.id}-${index}`} className={`review-option ${correct ? "correct" : ""}`}><strong>{option.label}.</strong> <OptionContent option={option} importId={id} administrative /> {correct && <Check size={14} className="inline" aria-label="Correct answer" />}</li>;
                 })}</ul>}
-                {selected.content.explanation && <p className="notice">{selected.content.explanation}</p>}
+                <DetailedExplanation text={selected.content.explanation} crops={selected.content.explanationCrops} importId={id} administrative open />
               </>}
             <div className="question-nav admin-section">
               {selectedIndex > 0 ? <Link className="text-link" href={draftLink(checked[selectedIndex - 1].number)}><ArrowLeft size={15} />Previous</Link> : <span />}

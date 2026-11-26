@@ -3,6 +3,7 @@
 import { ArrowRight, Check, CircleCheck, RotateCcw, X } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useEffect, useState, useTransition } from "react";
+import { DetailedExplanation } from "@/components/detailed-explanation";
 import { OptionContent } from "@/components/option-content";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ export function AnswerForm(props: Props) {
   return <AnswerRound key={round} {...props} retry={() => setRound(round + 1)} />;
 }
 
-function RankedRound({ id, revision, mode = "bank", options, prompts, retry, next, drillId, initialResult }: Props & { retry: () => void }) {
+function RankedRound({ id, revision, mode = "bank", options, prompts, retry, next, drillId, initialResult, importId, testSessionId }: Props & { retry: () => void }) {
   const [result, action, pending] = useActionState(drillId ? answerDrill.bind(null, drillId, id) : submitAnswer.bind(null, id, revision, mode), initialResult ?? {});
   return <form action={action} className="answer-form grid gap-3">
     <fieldset disabled={pending || Boolean(result.answer)}>
@@ -37,14 +38,14 @@ function RankedRound({ id, revision, mode = "bank", options, prompts, retry, nex
         <AlertTitle>{result.correct === undefined ? "Reference answer" : result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
         <AlertDescription className="whitespace-pre-wrap">{rankedLabels(options, choiceIds(result.answer), prompts)}</AlertDescription>
       </Alert>
-      {result.explanation && <details><summary>Explanation</summary><p>{result.explanation}</p></details>}
+      <DetailedExplanation text={result.explanation} crops={result.explanationCrops} importId={importId} sessionId={testSessionId} open />
       <div className="form-actions">{!drillId && <Button type="button" variant="outline" onClick={retry}>Try again</Button>}
         {next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</div>
     </> : <Button type="submit" disabled={pending} className="justify-self-start">Check answer</Button>}
   </form>;
 }
 
-function WrittenRound({ id, revision, interaction, mode = "bank", retry, next, drillId, initialResult }: Props & { interaction: WrittenInteraction; retry: () => void }) {
+function WrittenRound({ id, revision, interaction, mode = "bank", retry, next, drillId, initialResult, importId, testSessionId }: Props & { interaction: WrittenInteraction; retry: () => void }) {
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
   const [response, setResponse] = useState(typeof initialResult?.selected === "string" ? initialResult.selected : "");
@@ -68,7 +69,7 @@ function WrittenRound({ id, revision, interaction, mode = "bank", retry, next, d
         <AlertDescription className="whitespace-pre-wrap">{result.answer}</AlertDescription>
       </Alert>
       {descriptive && <p className="text-sm text-muted-foreground">Compare your response with the reference answer.</p>}
-      {result.explanation && <details className="source-text"><summary>Explanation</summary><p>{result.explanation}</p></details>}
+      <DetailedExplanation text={result.explanation} crops={result.explanationCrops} importId={importId} sessionId={testSessionId} open />
       <div className="form-actions">{!drillId && <Button type="button" variant="outline" onClick={retry}>Try again</Button>}
         {next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</div>
     </> : <Button type="submit" disabled={!ready || pending || !response.trim()} className="justify-self-start">{descriptive ? "Reveal reference answer" : "Check answer"}</Button>}
@@ -113,7 +114,7 @@ function AnswerRound({ id, importId, testSessionId, revision, options, interacti
         <AlertTitle>{result.correct === undefined ? "Reference answer" : result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
         <AlertDescription>{answers.length === 1 ? "Correct option: " : "Correct options: "}{answers.map((answer) => `${answer.label}. ${answer.text}`).join("; ")}</AlertDescription>
       </Alert>}
-      {graded && result.explanation && <details className="source-text rounded-md border p-3"><summary>Explanation</summary><p>{result.explanation}</p></details>}
+      {graded && <DetailedExplanation text={result.explanation} crops={result.explanationCrops} importId={importId} sessionId={testSessionId} open />}
     </div>
     {immediate && !graded && <p className="mt-2 text-xs text-muted-foreground">Choose an option to check your answer.</p>}
     {(!immediate || graded) && <div className="form-actions">

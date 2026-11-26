@@ -37,7 +37,7 @@ export async function answerDrill(id: string, questionId: string, _state: Answer
     const [version] = await tx.select().from(questionVersions).where(and(eq(questionVersions.questionId, questionId), eq(questionVersions.revision, question.revision)));
     if (!version) return { error: "This question is unavailable." };
     const previous = drill.responses[questionId];
-    if (previous?.answered) return { selected: previous.selected, correct: previous.correct, answer: version.content.answer ?? undefined, explanation: version.content.explanation };
+    if (previous?.answered) return { selected: previous.selected, correct: previous.correct, answer: version.content.answer ?? undefined, explanation: version.content.explanation, explanationCrops: version.content.explanationCrops };
     const { result, attempt } = checkSubmission(version.content, form.getAll("option"));
     if (result.error) return result;
     await tx.update(studyDrills).set({ responses: {

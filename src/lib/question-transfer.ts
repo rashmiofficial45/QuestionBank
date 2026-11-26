@@ -79,6 +79,7 @@ export function parseQuestionTransfer(text: string, extension: "csv" | "json", s
     const parsed = entrySchema.safeParse(row);
     if (!parsed.success) throw new Error(`Question entry ${index + 1} has invalid ${parsed.error.issues[0].path.join(".") || "data"}.`);
     const { content } = parsed.data;
+    if (content.explanationCrops?.length) throw new Error(`Question entry ${index + 1} references an explanation from a source PDF. Use a PDF import to attach that source.`);
     if ([...content.blocks, ...content.options.flatMap((option) => option.blocks ?? [])].some((block) => block.type === "source_crop")) {
       throw new Error(`Question entry ${index + 1} references a crop from a separate PDF. Add its editable content without that source crop.`);
     }
@@ -101,6 +102,7 @@ export async function transferableContent(content: Content, resolveImage: (crop:
   return {
     ...content,
     sourceRegions: undefined,
+    explanationCrops: undefined,
     blocks: await Promise.all(content.blocks.map((block) => block.type === "source_crop" ? resolveImage(block) : block)),
     options: await Promise.all(content.options.map(async (option) => ({
       ...option, blocks: option.blocks && await Promise.all(option.blocks.map((block) => block.type === "source_crop" ? resolveImage(block) : block)),

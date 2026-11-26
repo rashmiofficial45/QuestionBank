@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
+import { detailedFixture, polityDetailedPaper } from "./detailed-fixture";
 
 const capture = process.env.PREVIEW_SCREENSHOT_DIR;
 const scanFixture = process.env.SCAN_FIXTURE_DIR;
@@ -203,7 +204,8 @@ test("uploads scanned PDFs and stages their editable table behind OCR review", a
     await page.getByLabel("Paper title").fill(title);
     await page.getByLabel("Subject").fill("Civics");
     await page.getByLabel("Question paper PDF").setInputFiles(join(scanFixture!, "scanned-paper.pdf"));
-    await page.getByLabel("Answer key PDF").setInputFiles(join(scanFixture!, "scanned-answer-key.pdf"));
+    await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(scanFixture!, "scanned-answer-key.pdf"));
+    await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("A"));
     await page.getByRole("button", { name: "Upload and process" }).click();
   }
   await expect(page.getByText("1 structured table")).toBeVisible({ timeout: 35_000 });
@@ -233,7 +235,8 @@ test("uploads scanned PDFs and stages their editable table behind OCR review", a
 
 test("stages all rasterized Polity questions and tables for source review", async ({ page }) => {
   const rasterFixture = process.env.POLITY_RASTER_FIXTURE_DIR;
-  test.skip(!rasterFixture, "Set POLITY_RASTER_FIXTURE_DIR to the raster-only Polity fixture directory.");
+  const detailedFixtureDir = process.env.POLITY_FIXTURE_DIR;
+  test.skip(!rasterFixture || !detailedFixtureDir, "Set POLITY_RASTER_FIXTURE_DIR and POLITY_FIXTURE_DIR to the sample PDF directories.");
   await page.goto("/admin/imports");
   await expect(page.getByRole("heading", { name: "Import history" })).toBeVisible();
   const title = "Polity PT-01 · OCR review";
@@ -245,7 +248,8 @@ test("stages all rasterized Polity questions and tables for source review", asyn
     await page.getByLabel("Paper title").fill(title);
     await page.getByLabel("Subject").fill("Polity");
     await page.getByLabel("Question paper PDF").setInputFiles(join(rasterFixture!, "polity-raster.pdf"));
-    await page.getByLabel("Answer key PDF").setInputFiles(join(rasterFixture!, "polity-key-raster.pdf"));
+    await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(rasterFixture!, "polity-key-raster.pdf"));
+    await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(join(detailedFixtureDir!, polityDetailedPaper));
     await page.getByRole("button", { name: "Upload and process" }).click();
   }
   await expect(page.getByText("9 structured tables")).toBeVisible({ timeout: 55_000 });

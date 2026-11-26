@@ -1,18 +1,20 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
+import { detailedFixture, polityDetailedPaper } from "./detailed-fixture";
 import { checkAccessibility } from "./verify-accessibility";
 
-test("stages a combined question paper with its own numbered answer key", async ({ page }) => {
+test("stages a question paper with a combined detailed answer PDF", async ({ page }) => {
   const fixture = process.env.RICH_OPTIONS_FIXTURE_DIR;
   test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use the dedicated editorial database and combined PDF fixture.");
   await page.goto("/admin/imports/new");
   await page.getByLabel("Paper title").fill(`Combined PDF verification ${Date.now()}`);
   await page.getByLabel("Subject").fill("General");
   await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "combined.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("A"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
   await page.getByRole("link", { name: "Review", exact: true }).click();
-  await expect(page.getByText(/answer key came from the combined PDF/)).toBeVisible();
+  await expect(page.getByText("Detailed explanation", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open answer key" })).toHaveCount(0);
   await expect(page.getByLabel("Correct answer")).toBeVisible();
 });
@@ -26,8 +28,8 @@ test("publishes rich choices and reveals the imported explanation after answerin
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("General");
   await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "paper.pdf"));
-  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "key.pdf"));
-  await page.getByLabel("Explanation PDF").setInputFiles(join(fixture!, "explanations.pdf"));
+  await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(fixture!, "key.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("A"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
   const imported = page.url();
@@ -40,7 +42,7 @@ test("publishes rich choices and reveals the imported explanation after answerin
   expect((await page.request.get(image.toString())).status()).toBe(404);
   await expect(page.getByRole("link", { name: "Open explanation PDF" })).toBeVisible();
   await page.goto(`${imported}?mode=edit&q=1`);
-  await expect(page.getByRole("textbox", { name: "Explanation" })).toHaveValue(explanation);
+  await page.getByRole("textbox", { name: "Explanation" }).fill(explanation);
   await page.getByRole("textbox", { name: "Option B", exact: true }).fill("x^2");
   await page.getByRole("checkbox", { name: "Render option B as LaTeX" }).check();
   await page.getByRole("checkbox", { name: /verified this draft/ }).check();
@@ -55,7 +57,6 @@ test("publishes rich choices and reveals the imported explanation after answerin
   await expect(page.getByText(explanation)).toHaveCount(0);
   await page.getByRole("button", { name: /A. Circle diagram/ }).click();
   await expect(page.getByText("Correct answer", { exact: true })).toBeVisible();
-  await page.getByText("Explanation", { exact: true }).click();
   await expect(page.getByText(explanation)).toBeVisible();
   if (process.env.PREVIEW_SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.PREVIEW_SCREENSHOT_DIR, "rich-choices.png") });
   await page.goto("/practice");
@@ -77,7 +78,8 @@ test("publishes revisions independently of active tests and keeps editorial hist
   await admin.getByLabel("Paper title").fill(title);
   await admin.getByLabel("Subject").fill("Civics");
   await admin.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "scanned-paper.pdf"));
-  await admin.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "scanned-answer-key.pdf"));
+  await admin.getByLabel("Answer key only PDF (optional)").setInputFiles(join(fixture!, "scanned-answer-key.pdf"));
+  await admin.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("A"));
   await admin.getByRole("button", { name: "Upload and process" }).click();
   await expect(admin.getByText("1 structured table")).toBeVisible({ timeout: 35_000 });
   const imported = admin.url();
@@ -106,7 +108,7 @@ test("publishes revisions independently of active tests and keeps editorial hist
   await admin.goto(edit);
   await admin.getByRole("button", { name: "Move option B up" }).click();
   await admin.getByLabel("Correct answer").selectOption("b");
-  await admin.getByLabel("Explanation").fill("Editorial review verification.");
+  await admin.getByRole("textbox", { name: "Explanation" }).fill("Editorial review verification.");
   await admin.getByRole("button", { name: "Save draft" }).click();
   await expect(admin.getByText("Draft saved.")).toBeVisible();
   const bank = await context.newPage();
@@ -165,7 +167,8 @@ test("publishes only the selected questions from a validated import", async ({ p
   await page.getByLabel("Paper title").fill(`Bulk publish verification ${Date.now()}`);
   await page.getByLabel("Subject").fill("Polity");
   await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "Test-01-Polity-01-QP-23-Nov-.pdf"));
-  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "Test-01-Polity-01-Answer-Key-23-Nov-.pdf"));
+  await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(fixture!, "Test-01-Polity-01-Answer-Key-23-Nov-.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(join(fixture!, polityDetailedPaper));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/50 ready to publish/)).toBeVisible({ timeout: 35_000 });
   const id = page.url().split("/").at(-1);
@@ -187,7 +190,7 @@ test("requeues a failed import and records the retry", async ({ page }) => {
   await page.getByLabel("Paper title").fill(`Import retry verification ${Date.now()}`);
   await page.getByLabel("Subject").fill("Civics");
   await page.getByLabel("Question paper PDF").setInputFiles(malformed);
-  await page.getByLabel("Answer key PDF").setInputFiles(malformed);
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(malformed);
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByRole("button", { name: "Retry import" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Retry import" }).click();
@@ -205,7 +208,8 @@ test("publishes and grades a multiple-answer question in the bank and a timed te
   await admin.getByLabel("Paper title").fill(title);
   await admin.getByLabel("Subject").fill("Civics");
   await admin.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "scanned-paper.pdf"));
-  await admin.getByLabel("Answer key PDF").setInputFiles(multipleKey ?? join(fixture!, "scanned-answer-key.pdf"));
+  await admin.getByLabel("Answer key only PDF (optional)").setInputFiles(multipleKey ?? join(fixture!, "scanned-answer-key.pdf"));
+  await admin.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("A, B"));
   await admin.getByRole("button", { name: "Upload and process" }).click();
   await expect(admin.getByText("1 structured table")).toBeVisible({ timeout: 35_000 });
   const imported = admin.url();
@@ -277,7 +281,8 @@ test("imports, publishes, and grades True/False questions", async ({ page }) => 
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("General");
   await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "true-false-paper.pdf"));
-  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "true-false-key.pdf"));
+  await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(fixture!, "true-false-key.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("True", "False"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/2 extracted.*2 flagged/)).toBeVisible({ timeout: 35_000 });
   const imported = page.url();
@@ -332,7 +337,8 @@ test("imports statement blocks and keeps single-choice grading after editorial e
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("General");
   await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "statements-paper.pdf"));
-  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "statements-key.pdf"));
+  await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(fixture!, "statements-key.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("C"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
   const imported = page.url();
@@ -378,7 +384,8 @@ test("imports, edits, and grades an Assertion–Reason question", async ({ page 
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("General");
   await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "assertion-reason-paper.pdf"));
-  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "assertion-reason-key.pdf"));
+  await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(fixture!, "assertion-reason-key.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("B"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
   const imported = page.url();
@@ -433,7 +440,8 @@ test("publishes written answers, grades decimals, and tracks study activity", as
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("General");
   await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "written-paper.pdf"));
-  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "written-key.pdf"));
+  await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(fixture!, "written-key.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("B", "A"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/2 extracted.*2 flagged/)).toBeVisible({ timeout: 35_000 });
   const imported = page.url();
@@ -514,7 +522,8 @@ test("grades matching pairs and chronological order", async ({ page }) => {
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("General");
   await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "written-paper.pdf"));
-  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "written-key.pdf"));
+  await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(fixture!, "written-key.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("B", "A"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/2 extracted.*2 flagged/)).toBeVisible({ timeout: 35_000 });
   const imported = page.url();

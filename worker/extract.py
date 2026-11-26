@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from document_layout import analyze_page, center, Layout, read_scanned_columns
 from layout_cache import page_layout
+from detailed_answers import read_detailed_answers, render_solution
 
 
 QUESTION = re.compile(r"^(\d{1,3})[.)](?:\s+|$)(.*)$")
@@ -21,6 +22,7 @@ OPTIONS_HEADING = re.compile(r"^(?:options|choices)\s*:?$", re.I)
 PASSAGE = re.compile(r"^(?:passage|comprehension)\s+(?:for questions|questions)\s+(\d{1,3})\s*[-–]\s*(\d{1,3})\s*:?\s*(.*)$", re.I)
 EXPLANATION = re.compile(r"^(?:Explanation\s+(\d{1,3})\s*:|(?:Question\s+)?(\d{1,3})[.)]\s+Explanation\s*:)\s*(.*)$", re.I)
 ANSWER_KEY_HEADING = re.compile(r"^answer\s+key\s*:?$", re.I)
+PAPER_CODE = re.compile(r"\bPT\s*[-–—]\s*(\d+)\b", re.I)
 STATEMENT = re.compile(
     r"^(?P<label>(?P<prefix>Statement[ \t]+)?(?:\((?P<wrapped>\d{1,2}|[IVX]+)\)|"
     r"(?P<bare>\d{1,2}|[IVX]+)[.):]))[ \t]+(?P<text>\S.*)$",
@@ -398,18 +400,34 @@ def build_blocks(stem, layouts):
     return blocks
 
 
-def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lambda _: None, *, explanation: Path | None = None, checkpoint: Path | None = None):
+def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lambda _: None, *, explanation: Path | None = None, detailed: Path | None = None, checkpoint: Path | None = None):
     stage("Reading paper layout and answer key")
-    with open_paper(paper) as doc, (open_paper(key) if key else nullcontext()) as key_doc:
+    with (open_paper(paper) as doc,
+          (open_paper(key) if key else nullcontext()) as key_doc,
+          (open_paper(detailed) if detailed else nullcontext()) as detailed_doc):
         layouts = read_layouts(doc, "paper", stage, checkpoint=checkpoint)
+        key_start = next((index for index, layout in enumerate(layouts[1:], 1)
+                          if layout.lines and ANSWER_KEY_HEADING.fullmatch(layout.lines[0][1])), None)
+        embedded_key = layouts[key_start:] if key_start else []
+        if key_start:
+            layouts = layouts[:key_start]
+        detailed_solutions = {}
+        detailed_layouts = []
+        if detailed_doc is not None:
+            detailed_pages = read_layouts(detailed_doc, "detailed answers", stage, include_tables=False, checkpoint=checkpoint)
+            paper_code = PAPER_CODE.search(" ".join(text for _, text in layouts[0].lines))
+            solution_code = PAPER_CODE.search(" ".join(text for _, text in detailed_pages[0].lines)) if detailed_pages else None
+            if paper_code and solution_code and int(paper_code[1]) != int(solution_code[1]):
+                raise ValueError("The paper code on the detailed answer PDF differs from the question paper.")
+            detailed_layouts, detailed_solutions = read_detailed_answers(detailed_doc, detailed_pages)
         if key_doc is not None:
             key_layouts = read_layouts(key_doc, "answer key", stage, include_tables=False, checkpoint=checkpoint)
+        elif detailed_doc is not None:
+            key_layouts = detailed_layouts
         else:
-            key_start = next((index for index, layout in enumerate(layouts)
-                              if layout.lines and ANSWER_KEY_HEADING.fullmatch(layout.lines[0][1])), None)
-            if not key_start:
+            if not embedded_key:
                 raise ValueError("For a combined PDF, place an Answer Key heading at the start of a separate page, or upload a separate answer key.")
-            layouts, key_layouts = layouts[:key_start], layouts[key_start:]
+            key_layouts = embedded_key
         cover = " ".join(text for _, text in layouts[0].lines)
         masthead = " ".join(text for box, text in layouts[1].lines if box.y0 < 46 or box.y0 > 795) if len(layouts) > 1 else ""
         polity = (
@@ -422,6 +440,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
         key_variants = booklet_labels(key_layouts)
         booklet = next(iter(paper_variants)) if len(paper_variants) == 1 else None
         answers = read_key(key_layouts, booklet)
+        detailed_key = read_key(detailed_layouts, booklet) if detailed_doc is not None else {}
         page_images = {}
         for page, layout in zip(doc, layouts):
             if layout.scanned or page.rotation:
@@ -492,8 +511,13 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             global_issues.append("Question numbering and the answer key differ. Verify the paper against the source.")
         if not polity:
             global_issues.append("Layout has no verified profile. Compare the draft with the source before publishing.")
-        if not key:
+        if not key and not detailed:
             global_issues.append("The answer key came from the combined PDF. Verify the answers before publishing.")
+        if detailed_doc is not None:
+            if set(detailed_solutions) != {number for _, number in numbering}:
+                global_issues.append("Detailed explanation numbering does not match the question paper.")
+            if any(layout.scanned for layout in detailed_pages):
+                global_issues.append("Detailed answer headings were read using OCR. Verify the key and explanation crops.")
         explanations = {}
         if explanation:
             try:
@@ -559,6 +583,25 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             boolean_options = {option["text"].strip().lower(): option["id"] for option in choices}
             is_boolean = len(choices) == len(option_ids) == 2 and boolean_options.keys() == {"true", "false"}
             candidates = answers[source]
+            detail_issues = []
+            answer_crops = []
+            if detailed_doc is not None:
+                matched = detailed_solutions.get(original_number, [])
+                solution = matched[0] if len(matched) == 1 and not section else None
+                official = detailed_key.get(source)
+                if solution:
+                    answer_crops = render_solution(detailed_doc, output, number, solution.crops)
+                    marker = f"{original_number}. {solution.answer}"
+                    inline = read_key([type(key_layouts[0])([(pdf.Rect(), marker)], [])]).get(("", original_number))
+                    if not inline or inline != official or candidates != official:
+                        detail_issues.append("The answer key and detailed answer disagree or are incomplete. Verify the correct option against the PDFs.")
+                        candidates = set()
+                    if not solution.explained or not solution.crops or solution.incomplete:
+                        detail_issues.append("The detailed explanation region needs verification.")
+                else:
+                    detail_issues.append("No unique detailed explanation was mapped to this question.")
+                    candidates = set()
+
             if is_boolean:
                 candidates = {
                     frozenset(boolean_options.get(label, label) for label in candidate) if candidate else None
@@ -567,7 +610,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             selected = next(iter(candidates)) if len(candidates) == 1 else None
             interaction = "true_false" if is_boolean else "single_choice"
             answer = None
-            issues = list(global_issues)
+            issues = [*global_issues, *detail_issues]
             explanation_text = ""
             if entries := explanations.get(source):
                 text = "\n".join(entries[0]).strip()
@@ -637,5 +680,6 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             items.append((number, page, dict(version=1, interaction=interaction, blocks=blocks,
                                               options=choices, answer=answer, explanation=explanation_text,
                                               sourceRegions=source_regions(content),
+                                              **({"explanationCrops": answer_crops} if answer_crops else {}),
                                               **({"sourceLabel": f"Section {section.upper()} · Question {original_number}"} if section else {})), issues))
         return items

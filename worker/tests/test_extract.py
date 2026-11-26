@@ -17,6 +17,26 @@ def make_pdf(path, lines):
         doc.save(path)
 
 
+def test_detailed_pdf_conflict_requires_editorial_verification(tmp_path):
+    paper = tmp_path / "paper.pdf"
+    detailed = tmp_path / "detailed.pdf"
+    make_pdf(paper, ["1. Which option is correct?", "(a) One", "(b) Two"])
+    make_pdf(detailed, ["Answer Key", "1. A", "Q1.", "Answer: B", "Explanation: Two."])
+    [(_, _, content, issues)] = extract(paper, None, tmp_path, detailed=detailed)
+    assert content["answer"] is None
+    assert any("disagree or are incomplete" in issue for issue in issues)
+    assert (tmp_path / content["explanationCrops"][0]["file"]).is_file()
+
+
+def test_detailed_pdf_rejects_a_different_paper_code(tmp_path):
+    paper = tmp_path / "paper.pdf"
+    detailed = tmp_path / "detailed.pdf"
+    make_pdf(paper, ["Test - PT - 01", "1. Which option is correct?", "(a) One", "(b) Two"])
+    make_pdf(detailed, ["Test - PT - 02", "Answer Key", "1. A", "Q1.", "Answer: A", "Explanation: One."])
+    with pytest.raises(ValueError, match="paper code"):
+        extract(paper, None, detailed=detailed)
+
+
 def test_unrecognized_layout_is_staged_with_review_flags(tmp_path):
     paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
     make_pdf(paper, ["1. Which option is correct?", "(a) A", "(b) B"])
@@ -215,6 +235,24 @@ def test_true_false_key_requires_explicit_binary_options(tmp_path):
     assert content["interaction"] == "single_choice"
     assert content["answer"] is None
     assert "Missing or conflicting official answer." in issues
+
+
+def test_actual_polity_detailed_answer_pdf(tmp_path):
+    fixture_dir = os.getenv("POLITY_FIXTURE_DIR")
+    if not fixture_dir:
+        pytest.skip("Set POLITY_FIXTURE_DIR to the supplied PDF directory.")
+    directory = Path(fixture_dir)
+    paper = directory / "Test-01-Polity-01-QP-23-Nov-.pdf"
+    detailed = directory / "Test-01-Polity-01-Detailed-Explaination-23-Nov-.pdf"
+    items = extract(paper, None, tmp_path, detailed=detailed)
+    assert [number for number, _, _, _ in items] == list(range(1, 51))
+    assert "".join(content["answer"] for _, _, content, _ in items) == POLITY_ANSWERS
+    assert not any(issues for _, _, _, issues in items)
+    assert [crop["page"] for crop in items[0][2]["explanationCrops"]] == [2, 3]
+    assert [crop["page"] for crop in items[42][2]["explanationCrops"]] == [30, 31]
+    assert all((tmp_path / crop["file"]).stat().st_size > 0
+               for _, _, content, _ in items for crop in content["explanationCrops"])
+    assert all(content["explanationCrops"] for _, _, content, _ in items)
 
 
 def test_actual_polity_paper_and_key(tmp_path):

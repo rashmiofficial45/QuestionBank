@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
+import { polityDetailedPaper } from "./detailed-fixture";
 
 const sources = process.env.POLITY_FIXTURE_DIR;
 const title = process.env.POLITY_IMPORT_TITLE ?? "Polity PT-01";
@@ -17,7 +18,8 @@ test("Polity PDFs can be reviewed and published, then searched and practiced", a
     await page.getByLabel("Paper title").fill(title);
     await page.getByLabel("Subject").fill("Polity");
     await page.getByLabel("Question paper PDF").setInputFiles(join(sources!, "Test-01-Polity-01-QP-23-Nov-.pdf"));
-    await page.getByLabel("Answer key PDF").setInputFiles(join(sources!, "Test-01-Polity-01-Answer-Key-23-Nov-.pdf"));
+    await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(sources!, "Test-01-Polity-01-Answer-Key-23-Nov-.pdf"));
+    await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(join(sources!, polityDetailedPaper));
     await page.getByRole("button", { name: "Upload and process" }).click();
   }
 
