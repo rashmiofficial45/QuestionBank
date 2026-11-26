@@ -234,6 +234,35 @@ export async function retryImport(importId: string) {
   revalidatePath(`/admin/imports/${importId}`);
 }
 
+export async function deleteImport(importId: string): Promise<{ error?: string; filesRetained?: boolean }> {
+  await requireAdmin();
+  if (!z.uuid().safeParse(importId).success) return { error: "Import unavailable." };
+  const result = await db.transaction(async (tx) => {
+    const [paper] = await tx.select({ status: imports.status }).from(imports)
+      .where(eq(imports.id, importId)).for("no key update");
+    if (!paper) return { error: "Import unavailable." };
+    if (paper.status === "processing") return { error: "Wait for processing to finish before deleting this import." };
+    if (await tx.$count(questions, eq(questions.importId, importId))) {
+      return { error: "This import has published questions and is retained for study history." };
+    }
+    await tx.delete(editorialEvents).where(eq(editorialEvents.importId, importId));
+    await tx.delete(drafts).where(eq(drafts.importId, importId));
+    await tx.delete(imports).where(eq(imports.id, importId));
+    return {};
+  });
+  if (result.error) return result;
+
+  let filesRetained = false;
+  try {
+    await rm(join(storageRoot(), importId), { recursive: true, force: true, maxRetries: 2 });
+  } catch (error) {
+    filesRetained = true;
+    console.error(JSON.stringify({ event: "import.cleanup_failed", importId, reason: error instanceof Error ? error.name : "unknown" }));
+  }
+  revalidatePath("/admin", "layout");
+  return { filesRetained };
+}
+
 export async function restoreOriginal(importId: string, draftId: string, generation: number) {
   await requireAdmin();
   if (![importId, draftId].every((id) => z.uuid().safeParse(id).success)) return;

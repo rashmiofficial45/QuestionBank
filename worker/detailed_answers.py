@@ -13,6 +13,10 @@ ANSWER_HEADING = re.compile(r"^Answer\s*:\s*(.*?)$", re.I)
 EXPLANATION_HEADING = re.compile(r"^(?:Detailed\s+)?Explanation\s*:", re.I)
 KEY_TITLE = re.compile(r"\banswer\s+key\s*:?\s*$", re.I)
 KEY_CONTEXT = re.compile(r"^(?:(?:test\s+)?booklet|section|part)\b", re.I)
+INLINE_TITLE = re.compile(r"^answers\s*(?:&|and)\s*explanations$", re.I)
+INLINE_HEADING = re.compile(r"^Q(?:uestion)?\s*(\d{1,3})[.)]\s+\(?([A-L])\)?$", re.I)
+VISION_TEST_CODE = re.compile(r"\btest\s*[-–—]\s*(\d{4,6})\b", re.I)
+VISION_COPYRIGHT = re.compile(r"^Copyright\s+©\s+by\s+Vision\s+IAS\b", re.I)
 
 
 @dataclass
@@ -25,17 +29,27 @@ class Solution:
     incomplete: bool = False
     crops: list[dict] = field(default_factory=list)
     alternate_number: int | None = None
+    inline: bool = False
 
 
 def read_detailed_answers(doc, layouts):
     """Return key lines before the first solution and unambiguous question regions."""
     beginnings = []
+    inline_format = any(INLINE_TITLE.fullmatch(text) for _, text in layouts[0].lines)
+    vision = inline_format and any("www.visionias.in" in text.lower() for _, text in layouts[0].lines)
+    inline_margin = None
     for index, layout in enumerate(layouts):
         lines = sorted(layout.lines, key=lambda pair: (round(pair[0].y0, 1), pair[0].x0))
         if not lines:
             continue
         left = min(box.x0 for box, _ in lines)
         for position, (box, text) in enumerate(lines):
+            if inline_format and (heading := INLINE_HEADING.fullmatch(text)):
+                if inline_margin is None:
+                    inline_margin = box.x0
+                if abs(box.x0 - inline_margin) <= 5:
+                    beginnings.append(Solution(int(heading[1]), index + 1, box.y0, heading[2].lower(), inline=True))
+                continue
             match = QUESTION_HEADING.fullmatch(text)
             scanned_match = OCR_QUESTION_HEADING.fullmatch(text) if layout.scanned and not match else None
             if not (match or scanned_match) or box.x0 > left + 20:
@@ -84,6 +98,11 @@ def read_detailed_answers(doc, layouts):
         if layout.scanned:
             lines = [(box, re.sub(r"^(\d{1,3})\s*,\s*(?=\()", r"\1.", text)) for box, text in lines]
         key_layouts.append(type(layout)(lines, [], layout.scanned))
+    if inline_format and key_on_page is None:
+        key_layouts = [type(layouts[0])(
+            [(pdf.Rect(), f"{solution.number}. {solution.answer}") for solution in beginnings if solution.inline],
+            [], any(layouts[solution.page - 1].scanned for solution in beginnings if solution.inline),
+        )]
     solutions = defaultdict(list)
     cover = " ".join(text for _, text in layouts[0].lines)
     sample_profile = (
@@ -109,12 +128,23 @@ def read_detailed_answers(doc, layouts):
             # The verified layout has a repeating masthead and footer in these bands.
             top = 39 if sample_profile else 0
             bottom = min(736, page.rect.height) if sample_profile else page.rect.height
+            if vision:
+                page_lines = layouts[page_number - 1].lines
+                if page_number != current.page and any(box.y0 < 100 and VISION_COPYRIGHT.match(text) for box, text in page_lines):
+                    break
+                bottom = min((box.y0 - 2 for box, text in page_lines
+                              if box.y0 > page.rect.height * .9 and "www.visionias.in" in text.lower()), default=bottom)
             if page_number == current.page:
                 top = max(0, current.top - (5 if layouts[page_number - 1].scanned else 2))
             if next_solution and page_number == next_solution.page:
                 bottom = min(bottom, next_solution.top - 3)
             if bottom <= top:
                 continue
+            if current.inline:
+                current.explained |= any(
+                    top <= box.y0 < bottom and box.x0 > inline_margin + 30 and re.search(r"[A-Za-z]{2,}", text)
+                    for box, text in layouts[page_number - 1].lines
+                )
             if next_solution and page_number == next_solution.page and page_number != current.page:
                 lines = layouts[page_number - 1].lines
                 has_text = any(top <= box.y0 < bottom for box, _ in lines)

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from document_layout import analyze_page, center, Layout, read_scanned_columns
 from layout_cache import page_layout
-from detailed_answers import read_detailed_answers, render_solution
+from detailed_answers import VISION_COPYRIGHT, VISION_TEST_CODE, read_detailed_answers, render_solution
 
 
 QUESTION = re.compile(r"^(\d{1,3})[.)](?:\s+|$)(.*)$")
@@ -47,6 +47,7 @@ KEY_VALUE = re.compile(
 KEY_BOOLEAN = re.compile(r"(true|false)|\(\s*(true|false)\s*\)", re.I)
 MAX_PAGES = 100
 POLITY_TABLES = {6, 18, 23, 25, 27, 35, 39, 43, 47}
+POLITY_TABLES_BY_CODE = {"01": POLITY_TABLES, "02": {5, 13, 29, 34, 38}}
 
 
 class Choice(BaseModel):
@@ -93,13 +94,16 @@ def column_margins(page, layout):
     return left, right
 
 
-def read_lines(doc, layouts, polity, stage, columns, checkpoint):
+def read_lines(doc, layouts, polity, stage, columns, checkpoint, *, vision=False):
     for page, layout in enumerate(layouts, start=1):
-        split = 300 if polity else columns[page][1] - 8 if page in columns else None
+        split = 300 if polity else 316 if vision else columns[page][1] - 8 if page in columns else None
         buckets = [[], []] if split is not None else [[]]
-        if polity and page == 1:
+        if (polity or vision) and page == 1:
             continue
         lines = layout.lines
+        vision_footer = min((box.y0 for box, text in lines if vision and box.y0 > 710 and (
+            VISION_COPYRIGHT.match(text) or "www.visionias.in" in text.lower()
+        )), default=doc[page - 1].rect.height)
         if polity and layout.scanned and not doc[page - 1].rotation:
             stage(f"Resolving OCR reading order on paper page {page} of {len(doc)}")
             lines = page_layout(checkpoint, "polity-columns", page,
@@ -107,6 +111,8 @@ def read_lines(doc, layouts, polity, stage, columns, checkpoint):
         if split is not None and not polity:
             lines = sorted(lines, key=lambda pair: (round(pair[0].y0, 1), pair[0].x0))
         for box, text in lines:
+            if vision and box.y0 >= vision_footer:
+                continue
             if split is not None and not polity and (box.x0 < split < box.x1 or SECTION.fullmatch(text)):
                 for bucket in buckets:
                     yield from bucket
@@ -411,13 +417,23 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
         embedded_key = layouts[key_start:] if key_start else []
         if key_start:
             layouts = layouts[:key_start]
+        cover = " ".join(text for _, text in layouts[0].lines)
+        vision_code = VISION_TEST_CODE.search(cover) if "www.visionias.in" in cover.lower() else None
+        vision = bool(vision_code and "TEST BOOKLET" in cover.upper() and len(layouts) > 1
+                      and not any(page.scanned for page in layouts))
+        if vision:
+            # This booklet has a fixed two-column grid. Its full-width grid and watermark are not question tables.
+            for layout in layouts:
+                layout.tables = [table for table in layout.tables if not table.box.x0 < 316 < table.box.x1]
+                layout.unresolved_tables = [box for box in layout.unresolved_tables or [] if not box.x0 < 316 < box.x1]
         detailed_solutions = {}
         detailed_layouts = []
         detailed_key_scanned = False
         if detailed_doc is not None:
             detailed_pages = read_layouts(detailed_doc, "detailed answers", stage, include_tables=False, checkpoint=checkpoint)
-            paper_code = PAPER_CODE.search(" ".join(text for _, text in layouts[0].lines))
-            solution_code = PAPER_CODE.search(" ".join(text for _, text in detailed_pages[0].lines)) if detailed_pages else None
+            pattern = VISION_TEST_CODE if vision_code else PAPER_CODE
+            paper_code = pattern.search(cover)
+            solution_code = pattern.search(" ".join(text for _, text in detailed_pages[0].lines)) if detailed_pages else None
             if paper_code and solution_code and int(paper_code[1]) != int(solution_code[1]):
                 raise ValueError("The paper code on the detailed answer PDF differs from the question paper.")
             detailed_layouts, detailed_solutions = read_detailed_answers(detailed_doc, detailed_pages)
@@ -430,14 +446,17 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             if not embedded_key:
                 raise ValueError("For a combined PDF, place an Answer Key heading at the start of a separate page, or upload a separate answer key.")
             key_layouts = embedded_key
-        cover = " ".join(text for _, text in layouts[0].lines)
         masthead = " ".join(text for box, text in layouts[1].lines if box.y0 < 46 or box.y0 > 795) if len(layouts) > 1 else ""
+        # The first two Polity papers share the same cover and column margins.
+        # The known table inventory applies to each paper separately.
+        polity_code = re.search(r"\bpolity\s*[-–]\s*pt\s*[-–]\s*(0[12])\b", masthead, re.I)
         polity = (
             len(layouts) == 13
             and "polity" in cover.lower()
             and "vajiram" in masthead.lower()
-            and bool(re.search(r"polity\s*[-–]\s*pt\s*[-–]\s*01\b", masthead, re.I))
+            and polity_code is not None
         )
+        expected_tables = POLITY_TABLES_BY_CODE[polity_code[1]] if polity else set()
         paper_variants = booklet_labels(layouts)
         key_variants = booklet_labels(key_layouts)
         booklet = next(iter(paper_variants)) if len(paper_variants) == 1 else None
@@ -457,11 +476,11 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             ]
         segments = []
         current = None
-        columns = {} if polity else {
+        columns = {} if polity or vision else {
             page.number + 1: margins for page, layout in zip(doc, layouts)
             if (margins := column_margins(page, layout))
         }
-        lines = list(read_lines(doc, layouts, polity, stage, columns, checkpoint))
+        lines = list(read_lines(doc, layouts, polity, stage, columns, checkpoint, vision=vision))
         if not lines:
             raise ValueError("No legible question text was recognized in this PDF.")
         if len(lines) > 25000:
@@ -490,8 +509,14 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
                 continue
             pattern = OCR_QUESTION if layouts[line.page - 1].scanned else QUESTION
             match = pattern.match(line.text)
-            margin = (304 if line.column else 28) if polity else columns.get(line.page, (page_left.get(line.page, left),))[line.column]
-            if match and abs(line.box.x0 - margin) <= 5:
+            if polity:
+                margin = 304 if line.column else 28
+            elif vision:
+                margin = 324 if line.column else 54
+            else:
+                margin = columns.get(line.page, (page_left.get(line.page, left),))[line.column]
+            at_margin = -5 <= line.box.x0 - margin <= (20 if vision else 5)
+            if match and at_margin:
                 current = ((section, int(match[1])), line.page, [])
                 active_passage = None
                 segments.append(current)
@@ -511,7 +536,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             global_issues.append("The answer key booklet could not be matched to the question paper.")
         if set(numbering) != set(answers):
             global_issues.append("Question numbering and the answer key differ. Verify the paper against the source.")
-        if not polity:
+        if not (polity or vision):
             global_issues.append("Layout has no verified profile. Compare the draft with the source before publishing.")
         if not key and not detailed:
             global_issues.append("The answer key came from the combined PDF. Verify the answers before publishing.")
@@ -532,6 +557,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
                 global_issues.append("The optional explanation PDF could not be read. Compare it with the drafts before publishing.")
         stage("Mapping answers and validating drafts")
         items = []
+        fixed_options = polity or vision
         renumber = len({number for _, number in numbering}) != len(numbering)
         for segment_index, (source, page, content) in enumerate(segments):
             section, original_number = source
@@ -541,12 +567,12 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             option_kind = None
             explicit_options = False
             for line in content:
-                if not polity and OPTIONS_HEADING.fullmatch(line.text):
+                if not fixed_options and OPTIONS_HEADING.fullmatch(line.text):
                     explicit_options = True
                     continue
-                marker = (OPTION if polity else GENERIC_OPTION).match(line.text)
-                option_margin = (328 if line.column else 52) if polity else None
-                if marker and not polity:
+                marker = (OPTION if fixed_options else GENERIC_OPTION).match(line.text)
+                option_margin = (328 if line.column else 52) if polity else (360 if line.column else 90) if vision else None
+                if marker and not fixed_options:
                     label = marker[1] or marker[2]
                     special = special_option(label)
                     if special and (option_kind in ("numeric", "roman") or not options):
@@ -561,7 +587,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
                     else:
                         option_kind = "alphabetic"
                 if marker and (option_margin is None or abs(line.box.x0 - option_margin) <= 5):
-                    letter, text = (marker[1], marker[2]) if polity else (marker[1] or marker[2], marker[3])
+                    letter, text = (marker[1], marker[2]) if fixed_options else (marker[1] or marker[2], marker[3])
                     options.append((letter.lower(), [Line(line.page, line.column, line.box, text)]))
                 elif options:
                     options[-1][1].append(line)
@@ -575,7 +601,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
                     next_marker = options[index + 1][1][0] if index + 1 < len(options) else None
                     if next_marker is None and segment_index + 1 < len(segments):
                         next_marker = next(iter(segments[segment_index + 1][2]), None)
-                    boundary = columns[marker.page][1] - 8 if marker.page in columns else None
+                    boundary = 316 if vision else columns[marker.page][1] - 8 if marker.page in columns else None
                     blocks = option_images(doc, output, number, marker, next_marker,
                                            page_images.get(marker.page, []), boundary, index)
                     if blocks:
@@ -652,7 +678,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
                 issues.append("The key lists multiple correct options. Verify the full answer set against the source.")
             if len(choices) < 2 or len(option_ids) != len(choices) or any(not c["text"] for c in choices):
                 issues.append("Option boundaries need review.")
-            if polity and [choice["id"] for choice in choices] != list("abcd"):
+            if fixed_options and [choice["id"] for choice in choices] != list("abcd"):
                 issues.append("Expected four options in source order.")
             if not as_text(stem):
                 issues.append("Question text is missing.")
@@ -676,12 +702,12 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
                 for table in layout.tables:
                     if inside_table(line, table.box):
                         visual_regions[(line.page, line.column)].append(table.box)
-            if unresolved or (polity and number in POLITY_TABLES and not structured):
+            if unresolved or (number in expected_tables and not structured):
                 issues.append("A table could not be structured safely. Compare the original layout before publishing.")
             visual_math = not polity and any(re.search(r"[∫∑√≈≠≤≥]", line.text) for line in stem)
             if visual_math:
                 issues.append("Check mathematical notation against the original PDF region.")
-            if stem and (images or visual_math or structured or unresolved or inferred_columns or (polity and number in POLITY_TABLES) or any(layout.scanned for layout in page_layouts)):
+            if stem and (images or visual_math or structured or unresolved or inferred_columns or number in expected_tables or any(layout.scanned for layout in page_layouts)):
                 crops = crop_stem(doc, output, number, stem, visual_regions)
                 if not images and not visual_math and not unresolved and (structured or inferred_columns or any(layout.scanned for layout in page_layouts)):
                     for crop in crops:

@@ -60,7 +60,7 @@ export function UploadForm() {
     <PdfFileField name="key" label="Answer key only PDF (optional)" disabled={pending}
       hint="Attach a separate key only if you want to cross-check the answers." />
     <PdfFileField name="detailed" label="Answer key with detailed explanations PDF" required disabled={pending}
-      hint="Upload one PDF with the answer key first and the numbered explanations after it." />
+      hint="Use a key followed by numbered explanations, or a PDF with the answer letter next to each question number." />
     {state.error && <p className="form-error" role="alert">{state.error}</p>}
     <div><Button type="submit" disabled={pending}><FileUp size={17} />{pending ? "Uploading…" : "Upload and process"}</Button></div>
   </form>;

@@ -48,18 +48,20 @@ export async function setBookmark(questionId: string, selected: boolean) {
   revalidatePath("/", "layout");
 }
 
-type NoteState = { saved?: boolean; error?: string };
+type NoteState = { note?: string; error?: string };
 
 export async function saveNote(questionId: string, _state: NoteState, form: FormData): Promise<NoteState> {
-  const note = z.string().trim().max(4000).safeParse(form.get("note"));
+  const submitted = form.get("note");
+  const note = z.string().trim().max(4000).safeParse(typeof submitted === "string" ? submitted.replace(/\r\n?/g, "\n") : submitted);
   if (!note.success || !z.uuid().safeParse(questionId).success) return { error: "Use up to 4,000 characters." };
-  const [question] = await db.select({ id: questions.id }).from(questions).where(and(eq(questions.id, questionId), activeQuestion));
+  const [question] = await db.select({ slug: questions.slug }).from(questions).where(and(eq(questions.id, questionId), activeQuestion));
   if (!question) return { error: "This question is unavailable." };
   const profileId = await getProfile(Boolean(note.data));
   if (profileId && note.data) await db.insert(studyNotes).values({ profileId, questionId, text: note.data })
     .onConflictDoUpdate({ target: [studyNotes.profileId, studyNotes.questionId], set: { text: note.data } });
   if (profileId && !note.data) await db.delete(studyNotes).where(and(eq(studyNotes.profileId, profileId), eq(studyNotes.questionId, questionId)));
-  return { saved: true };
+  revalidatePath(`/questions/${question.slug}`);
+  return { note: note.data };
 }
 
 export async function resetProgress() {

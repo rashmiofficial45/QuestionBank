@@ -2,6 +2,35 @@ import { expect, test } from "@playwright/test";
 import { join } from "node:path";
 import { polityDetailedPaper } from "./detailed-fixture";
 
+test("imports a Vision booklet with inline answers and shows the original explanations", async ({ page }) => {
+  const sources = process.env.VISION_FIXTURE_DIR;
+  test.skip(!sources || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use an isolated database and the Vision 15601 PDFs.");
+  const title = `Vision 15601 ${Date.now()}`;
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(title);
+  await page.getByLabel("Subject").fill("General Studies");
+  await page.getByLabel("Question paper PDF", { exact: true }).setInputFiles(join(sources!, "Test 01 (15601) Eng QP.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(join(sources!, "Test 01 (15601) Eng Sol.pdf"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText("100 extracted · 100 ready to publish · 0 flagged · 0 published")).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("link", { name: "Publish", exact: true }).click();
+  await page.getByRole("button", { name: "Publish 100 questions", exact: true }).click();
+  await expect(page.getByText("100 questions published to the student bank.")).toBeVisible();
+
+  await page.goto(`/questions?${new URLSearchParams({ source: title })}`);
+  const third = page.getByRole("article").filter({ has: page.getByRole("link", { name: "Question 3", exact: true }) });
+  await expect(third.getByText("Detailed explanation", { exact: true })).toHaveCount(0);
+  await third.getByRole("button", { name: /^A\./ }).click();
+  await expect(third.getByRole("alert")).toContainText("Incorrect answer");
+  const continuation = third.locator("details[open]").getByRole("img", { name: "Original detailed explanation, PDF page 2" });
+  await continuation.scrollIntoViewIfNeeded();
+  await expect.poll(() => continuation.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(200);
+  await third.getByRole("button", { name: "Try again" }).click();
+  await third.getByRole("button", { name: /^C\./ }).click();
+  await expect(third.getByRole("alert")).toContainText("Correct answer");
+  await expect(continuation).toBeVisible();
+});
+
 test("publishes the combined Polity answer PDF and reveals original explanations after grading", async ({ page, browser }) => {
   const sources = process.env.POLITY_FIXTURE_DIR;
   test.skip(!sources || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use an isolated database and the supplied Polity PDFs.");

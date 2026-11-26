@@ -38,6 +38,46 @@ def test_detailed_pdf_rejects_a_different_paper_code(tmp_path):
         extract(paper, None, detailed=detailed)
 
 
+@pytest.mark.parametrize("standalone_key,expected", [(None, "b"), ("B", "b"), ("A", None)])
+def test_inline_answer_label_is_mapped_without_a_separate_key(tmp_path, standalone_key, expected):
+    paper = tmp_path / "paper.pdf"
+    detailed = tmp_path / "detailed.pdf"
+    key = tmp_path / "key.pdf" if standalone_key else None
+    make_pdf(paper, ["1. Which option is correct?", "(a) One", "(b) Two"])
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((100, 50), "ANSWERS & EXPLANATIONS")
+        page.insert_text((40, 85), "Q 1. B")
+        page.insert_text((95, 85), "The second option is correct.")
+        doc.save(detailed)
+    if key:
+        make_pdf(key, [f"1. {standalone_key}"])
+    [(_, _, content, issues)] = extract(paper, key, tmp_path, detailed=detailed)
+    assert content["answer"] == expected
+    assert content["explanationCrops"] == [{"page": 1, "file": "answer-1-1.png"}]
+    assert "The detailed explanation region needs verification." not in issues
+
+
+def test_actual_vision_inline_answers_and_question_paper():
+    fixture = os.getenv("VISION_FIXTURE_DIR")
+    if not fixture:
+        pytest.skip("Set VISION_FIXTURE_DIR to the 15601 PDF directory.")
+    directory = Path(fixture)
+    paper = directory / "Test 01 (15601) Eng QP.pdf"
+    detailed = directory / "Test 01 (15601) Eng Sol.pdf"
+    items = extract(paper, None, detailed=detailed)
+    assert [number for number, _, _, _ in items] == list(range(1, 101))
+    assert all(not issues and [option["id"] for option in content["options"]] == list("abcd")
+               for _, _, content, issues in items)
+    assert "".join(content["answer"] for _, _, content, _ in items) == (
+        "aacbcacabaabbabcbacabcbcccbcaaacaacbcabbcaccdbdaccbcddbaabdbdbbcddaabddbdbdbcbbdadbbbbabdbaaccbdcbca"
+    )
+    assert [crop["page"] for crop in items[2][2]["explanationCrops"]] == [1, 2]
+    assert [crop["page"] for crop in items[99][2]["explanationCrops"]] == [37]
+    assert items[62][2]["blocks"][1]["type"] == "statements"
+    assert all(block["type"] != "table" for item in items[-3:] for block in item[2]["blocks"])
+
+
 @pytest.mark.parametrize("source_entry,expected", [("1, (c)", "c"), ("1.)", "c"), ("1. (b)", None)])
 def test_scanned_detailed_key_keeps_real_conflicts_for_review(tmp_path, monkeypatch, source_entry, expected):
     paper = tmp_path / "paper.pdf"
@@ -277,6 +317,23 @@ def test_actual_polity_detailed_answer_pdf(tmp_path):
     assert all((tmp_path / crop["file"]).stat().st_size > 0
                for _, _, content, _ in items for crop in content["explanationCrops"])
     assert all(content["explanationCrops"] for _, _, content, _ in items)
+
+
+def test_actual_polity_pt2_skips_the_numbered_cover_and_preserves_questions(tmp_path):
+    fixture_dir = os.getenv("POLITY_PT2_FIXTURE_DIR")
+    if not fixture_dir:
+        pytest.skip("Set POLITY_PT2_FIXTURE_DIR to the PT-02 paper and detailed PDF directory.")
+    directory = Path(fixture_dir)
+    items = extract(directory / "paper.pdf", None, tmp_path, detailed=directory / "detailed.pdf")
+    assert [number for number, _, _, _ in items] == list(range(1, 51))
+    assert items[0][1] == 2 and items[-1][1] == 13
+    assert "Which one of the following pairs of rights" in items[0][2]["blocks"][0]["text"]
+    assert all(not issues and [option["id"] for option in content["options"]] == list("abcd")
+               for _, _, content, issues in items)
+    assert "".join(content["answer"] for _, _, content, _ in items) == "acbdcadccccadcbbbaadcadcbdbdcddccbabbabcbcabbbcbbb"
+    assert {number for number, _, content, _ in items if any(block["type"] == "table" for block in content["blocks"])} == {5, 13, 29, 34, 38}
+    assert all(content.get("explanationCrops") for _, _, content, _ in items)
+    assert sum(len(content["explanationCrops"]) for _, _, content, _ in items) == 72
 
 
 def test_actual_polity_paper_and_key(tmp_path):

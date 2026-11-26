@@ -1,7 +1,88 @@
 import { expect, test } from "@playwright/test";
+import { join } from "node:path";
+import { detailedFixture } from "./detailed-fixture";
 import { checkAccessibility } from "./verify-accessibility";
 
 test.skip(process.env.EDITORIAL_TEST_DATABASE !== "1", "Use an isolated editorial database.");
+
+test("can cancel deletion or delete an unpublished PDF import", async ({ page }) => {
+  const fixtures = process.env.RICH_OPTIONS_FIXTURE_DIR;
+  test.skip(!fixtures, "Set RICH_OPTIONS_FIXTURE_DIR to the PDF fixture directory.");
+  const title = `Delete draft import ${Date.now()}`;
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(title);
+  await page.getByLabel("Subject").fill("General");
+  await page.getByLabel("Question paper PDF").setInputFiles(join(fixtures!, "combined.pdf"));
+  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("A"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText(/1 extracted/)).toBeVisible({ timeout: 35_000 });
+  const importUrl = page.url();
+  const id = new URL(importUrl).pathname.split("/").at(-1)!;
+  const sourceUrl = `/api/v1/source/${id}/paper.pdf`;
+  expect((await page.request.get(sourceUrl)).ok()).toBe(true);
+
+  await page.getByRole("button", { name: "Delete import", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Delete this import?" });
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await page.getByRole("button", { name: "Delete import", exact: true }).click();
+  await confirmation.getByRole("button", { name: "Delete import", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Import history" })).toBeVisible();
+  await expect(page.getByText("Import deleted.", { exact: true })).toBeVisible();
+  await expect(page.getByText(title, { exact: true })).toHaveCount(0);
+  expect((await page.request.get(importUrl)).status()).toBe(404);
+  expect((await page.request.get(sourceUrl)).status()).toBe(404);
+});
+
+test("study notes persist across revisits and remain private to the browser profile", async ({ page, browser }) => {
+  await page.goto(`/questions?${new URLSearchParams({ source: process.env.POLITY_IMPORT_TITLE ?? "Polity PT-01" })}`);
+  await page.getByRole("link", { name: "Question 1", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Question 1", exact: true })).toBeVisible();
+  const question = page.url();
+  const note = page.getByRole("textbox", { name: "Study note", exact: true });
+  const summary = page.getByText("Study note", { exact: true });
+  const save = page.getByRole("button", { name: "Save note", exact: true });
+  const reminder = "Read what the question asks.\nCross-check the exception before choosing.";
+  await summary.click();
+  await expect(save).toBeDisabled();
+  await note.fill(reminder);
+  await save.click();
+  await expect(page.getByText("Note saved.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Skip to next question" }).click();
+  await expect(page.getByRole("heading", { name: "Question 2", exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.locator("summary").getByText(/Read what the question asks/)).toBeVisible();
+  await page.reload();
+  await summary.click();
+  await expect(note).toHaveValue(reminder);
+
+  const otherContext = await browser.newContext();
+  try {
+    const other = await otherContext.newPage();
+    await other.goto(question);
+    await other.getByText("Study note", { exact: true }).click();
+    await expect(other.getByRole("textbox", { name: "Study note", exact: true })).toBeEmpty();
+  } finally {
+    await otherContext.close();
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Toggle black and white theme" }).click();
+  await checkAccessibility(page, "Open study note in Black at phone width");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  await note.fill("Compare both statements carefully.");
+  await save.click();
+  await expect(page.getByText("Note saved.", { exact: true })).toBeVisible();
+  await page.reload();
+  await summary.click();
+  await expect(note).toHaveValue("Compare both statements carefully.");
+  await note.fill("");
+  await save.click();
+  await expect(page.getByText("Note removed.", { exact: true })).toBeVisible();
+  await page.reload();
+  await summary.click();
+  await expect(note).toBeEmpty();
+});
 
 test("creates, edits, autosaves locally, and publishes a manual question", async ({ page }) => {
   const title = `Manual question ${Date.now()}`;
@@ -29,6 +110,7 @@ test("creates, edits, autosaves locally, and publishes a manual question", async
   await page.getByRole("link", { name: "Publish", exact: true }).click();
   await page.getByRole("button", { name: "Publish 1 question" }).click();
   await expect(page.getByText("1 question published to the student bank.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete import", exact: true })).toHaveCount(0);
   await page.goto(`/questions?source=${encodeURIComponent(title)}`);
   await expect(page.getByText("Which number is even?")).toBeVisible();
 });

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { EditorialHistory } from "@/components/editorial-history";
 import { Button } from "@/components/ui/button";
 import { DetailedExplanation } from "@/components/detailed-explanation";
+import { DeleteImport } from "@/components/delete-import";
 import { SourcePdf } from "@/components/source-pdf";
 import { OptionContent } from "@/components/option-content";
 import { QuestionContent } from "@/components/question-content";
@@ -46,7 +47,13 @@ export default async function ImportDetails({ params, searchParams }: { params: 
   const draftLink = (number: number, kind = mode) => `${base}?mode=${kind}&q=${number}`;
   return <>
     <Link className="text-link workspace-back" href="/admin/imports"><ArrowLeft size={16} /> PDF imports</Link>
-    <div className="admin-head"><div className="page-heading"><span className="tile-icon"><FileText size={21} /></span><h1>{paper.title}</h1><p>{paper.subject} · {paper.paperName}</p></div><ImportStatus value={paper.status} /></div>
+    <div className="admin-head">
+      <div className="page-heading"><span className="tile-icon"><FileText size={21} /></span><h1>{paper.title}</h1><p>{paper.subject} · {paper.paperName}</p></div>
+      <div className="flex flex-wrap items-center gap-2">
+        <ImportStatus value={paper.status} />
+        {paper.status !== "processing" && !checked.some((draft) => draft.published) && <DeleteImport id={id} title={paper.title} />}
+      </div>
+    </div>
     {paper.status !== "ready" ? <section className="panel bank-panel" aria-live="polite"><h2>{paper.stage}</h2>{paper.error && <p className="form-error">{paper.error}</p>}{paper.status === "failed" && <form className="form-actions" action={retryImport.bind(null, id)}><Button type="submit" variant="outline"><RefreshCw />Retry import</Button></form>}{["queued", "processing"].includes(paper.status) && <RefreshImport />}
         <Link className="text-link mt-3" href={mode === "history" ? base : `${base}?mode=history`}>{mode === "history" ? "Hide activity" : "View editorial activity"}</Link>
       </section> : <>

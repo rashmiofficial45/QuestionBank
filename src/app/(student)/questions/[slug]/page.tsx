@@ -35,6 +35,6 @@ export default async function QuestionPage({ params, searchParams }: { params: P
       <AnswerForm importId={question.importId} mode={practice === "1" ? "practice" : "bank"} id={question.id} revision={question.revision} options={question.content.options} interaction={question.content.interaction} prompts={question.content.interaction === "pair_matching" ? question.content.prompts : undefined} next={nextHref} />
     </article>
     <QuestionNote key={question.id} id={question.id} initial={notes[0]?.text ?? ""} />
-    {nextHref && <div className="question-nav"><span /><Link className="text-link" href={nextHref}>Skip to next question <ArrowRight size={16} /></Link></div>}
+    {nextHref && <div className="mt-3 flex justify-end"><Link className="text-link" href={nextHref}>Skip to next question <ArrowRight size={16} /></Link></div>}
   </div>;
 }

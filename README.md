@@ -27,7 +27,7 @@ set +a
 .venv/bin/python worker/main.py
 ```
 
-Visit [the student workspace](http://127.0.0.1:3000/) or [PDF imports](http://127.0.0.1:3000/admin/imports). Upload the question paper and a detailed answer PDF that starts with the answer key and follows it with numbered solutions headed `Q1.`, `Answer:`, and `Explanation:`. A standalone answer key is optional and is cross-checked when supplied. The worker matches solutions by question number, verifies the answer labels, and keeps images of the original explanation pages. Open **Review** for a read-only source comparison, **Edit** to save a draft, or **Publish** to send eligible questions to the student bank. Detailed explanations open after grading and are available in submitted test reviews. Attempts and bookmarks are associated with a browser cookie.
+Visit [the student workspace](http://127.0.0.1:3000/) or [PDF imports](http://127.0.0.1:3000/admin/imports). Upload a question paper and its detailed answer PDF. The importer supports a key followed by numbered explanations and an **Answers & Explanations** document with inline labels such as `Q 1. A`. A standalone answer key is optional and is cross-checked when supplied. The worker matches solutions by question number, verifies the answer labels, and keeps images of the original explanation pages. Open **Review** for a read-only source comparison, **Edit** to save a draft, or **Publish** to send eligible questions to the student bank. Detailed explanations open after grading and are available in submitted test reviews. Attempts and bookmarks are associated with a browser cookie.
 
 ## Deployment boundary
 
