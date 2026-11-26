@@ -12,7 +12,7 @@ test("public service separates editor, original PDFs, and public source crops", 
   expect(asset).toBeTruthy();
   const crop = new URL(asset!, publicUrl);
   for (const path of ["/admin", "/admin/imports", "/admin/imports/new", "/admin/settings", "/admin/duplicates",
-    ...["paper.pdf", "key.pdf", "detailed.pdf"].map((file) => crop.pathname.replace(/[^/]+$/, file))]) {
+    ...["paper.pdf", "key.pdf", "detailed.pdf", "answers.pdf"].map((file) => crop.pathname.replace(/[^/]+$/, file))]) {
     expect((await request.get(new URL(path, publicUrl).toString())).status(), path).toBe(404);
   }
   const image = await request.get(crop.toString());

@@ -181,6 +181,24 @@ def read_key(layouts, booklet=None):
     return answers
 
 
+def normalize_answer_rows(layouts):
+    """Normalize Q prefixes and join adjacent number/answer cells on the same row."""
+    normalized = []
+    for layout in layouts:
+        lines = []
+        for box, text in layout.lines:
+            text = re.sub(r"^Q(?:uestion)?\s*(?=\d{1,3}[.):])", "", text, flags=re.I)
+            if number := re.fullmatch(r"(\d{1,3})[.):]?", text):
+                nearest = min(((right.x0, value) for right, value in layout.lines
+                               if 1 <= right.x0 - box.x1 <= 120 and abs(right.y0 - box.y0) <= 4),
+                              default=None)
+                if nearest and (KEY_VALUE.fullmatch(nearest[1]) or KEY_BOOLEAN.fullmatch(nearest[1])):
+                    text = f"{number[1]}. {nearest[1]}"
+            lines.append((box, text))
+        normalized.append(Layout(lines, [], layout.scanned))
+    return normalized
+
+
 def read_explanations(path, stage, checkpoint):
     entries = defaultdict(list)
     current = None
@@ -406,8 +424,9 @@ def build_blocks(stem, layouts):
     return blocks
 
 
-def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lambda _: None, *, explanation: Path | None = None, detailed: Path | None = None, checkpoint: Path | None = None):
+def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lambda _: None, *, explanation: Path | None = None, detailed: Path | None = None, answer_document: Path | None = None, checkpoint: Path | None = None):
     stage("Reading paper layout and answer key")
+    detailed = answer_document or detailed
     with (open_paper(paper) as doc,
           (open_paper(key) if key else nullcontext()) as key_doc,
           (open_paper(detailed) if detailed else nullcontext()) as detailed_doc):
@@ -436,7 +455,9 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             solution_code = pattern.search(" ".join(text for _, text in detailed_pages[0].lines)) if detailed_pages else None
             if paper_code and solution_code and int(paper_code[1]) != int(solution_code[1]):
                 raise ValueError("The paper code on the detailed answer PDF differs from the question paper.")
-            detailed_layouts, detailed_solutions = read_detailed_answers(detailed_doc, detailed_pages)
+            detailed_layouts, detailed_solutions = read_detailed_answers(detailed_doc, detailed_pages, allow_key_only=answer_document is not None)
+            if answer_document:
+                detailed_layouts = normalize_answer_rows(detailed_layouts)
             detailed_key_scanned = any(layout.scanned and layout.lines for layout in detailed_layouts)
         if key_doc is not None:
             key_layouts = read_layouts(key_doc, "answer key", stage, include_tables=False, checkpoint=checkpoint)
@@ -461,7 +482,9 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
         key_variants = booklet_labels(key_layouts)
         booklet = next(iter(paper_variants)) if len(paper_variants) == 1 else None
         answers = read_key(key_layouts, booklet)
-        detailed_key = read_key(detailed_layouts, booklet) if detailed_doc is not None else {}
+        if answer_document and not any(entry for entries in answers.values() for entry in entries) and not key_variants:
+            raise ValueError("No numbered answers were found in the answer PDF. Include answer labels such as 1. A or Q 1. A.")
+        detailed_key = read_key(detailed_layouts, booklet) if detailed_solutions else {}
         page_images = {}
         for page, layout in zip(doc, layouts):
             if layout.scanned or page.rotation:
@@ -540,7 +563,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             global_issues.append("Layout has no verified profile. Compare the draft with the source before publishing.")
         if not key and not detailed:
             global_issues.append("The answer key came from the combined PDF. Verify the answers before publishing.")
-        if detailed_doc is not None:
+        if detailed_solutions:
             if set(detailed_solutions) != {number for _, number in numbering}:
                 global_issues.append("Detailed explanation numbering does not match the question paper.")
             if any(layout.scanned for layout in detailed_pages):
@@ -613,15 +636,17 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             candidates = answers[source]
             detail_issues = []
             answer_crops = []
-            if detailed_doc is not None:
+            if detailed_solutions:
                 matched = detailed_solutions.get(original_number, [])
                 solution = matched[0] if len(matched) == 1 and not section else None
                 official = detailed_key.get(source, set())
                 if solution:
                     answer_crops = render_solution(detailed_doc, output, number, solution.crops)
                     marker = f"{original_number}. {solution.answer}"
-                    inline = read_key([type(key_layouts[0])([(pdf.Rect(), marker)], [])]).get(("", original_number), set())
-                    if detailed_key_scanned:
+                    inline = official if solution.key_from_summary else read_key(
+                        [type(key_layouts[0])([(pdf.Rect(), marker)], [])]
+                    ).get(("", original_number), set())
+                    if detailed_key_scanned and not solution.key_from_summary:
                         allowed_labels = option_ids | (boolean_options.keys() if is_boolean else set())
                         official = {entry for entry in official if entry and entry.issubset(allowed_labels)}
                         if not official:

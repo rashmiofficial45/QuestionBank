@@ -17,9 +17,8 @@ test("Polity PDFs can be reviewed and published, then searched and practiced", a
     await page.getByRole("link", { name: "New import" }).click();
     await page.getByLabel("Paper title").fill(title);
     await page.getByLabel("Subject").fill("Polity");
-    await page.getByLabel("Question paper PDF").setInputFiles(join(sources!, "Test-01-Polity-01-QP-23-Nov-.pdf"));
-    await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(sources!, "Test-01-Polity-01-Answer-Key-23-Nov-.pdf"));
-    await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(join(sources!, polityDetailedPaper));
+    await page.getByLabel("Questions PDF").setInputFiles(join(sources!, "Test-01-Polity-01-QP-23-Nov-.pdf"));
+    await page.getByLabel("Answers PDF").setInputFiles(join(sources!, polityDetailedPaper));
     await page.getByRole("button", { name: "Upload and process" }).click();
   }
 

@@ -11,7 +11,7 @@ const missing = () => new Response("Source unavailable", { status: 404 });
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; file: string }> }) {
   const { id, file } = await params;
-  const original = ["paper.pdf", "key.pdf", "explanations.pdf", "detailed.pdf"].includes(file);
+  const original = ["paper.pdf", "key.pdf", "explanations.pdf", "detailed.pdf", "answers.pdf"].includes(file);
   const crop = /^page-\d+-\d+\.png$/.test(file);
   const explanation = /^answer-\d+-\d+\.png$/.test(file);
   if (!z.uuid().safeParse(id).success || !(original || crop || explanation)) return missing();

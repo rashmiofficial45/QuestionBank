@@ -103,8 +103,8 @@ export default async function ImportDetails({ params, searchParams }: { params: 
             <div className="section-heading"><div><h2>Original paper</h2><p>PDF page {selected.page}</p></div></div>
             <div className="admin-source-links">
               <a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/paper.pdf#page=${selected.page}`}>Open PDF <ArrowUpRight size={15} /></a>
-              {paper.keyName && <a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/key.pdf`}>Open answer key <ArrowUpRight size={15} /></a>}
-              {explanationSource && <a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/${explanationSource}`}>Open explanation PDF <ArrowUpRight size={15} /></a>}
+              {paper.keyName && explanationSource !== "answers.pdf" && <a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/key.pdf`}>Open answer key <ArrowUpRight size={15} /></a>}
+              {explanationSource && <a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/${explanationSource}`}>{explanationSource === "answers.pdf" ? "Open answers PDF" : "Open explanation PDF"} <ArrowUpRight size={15} /></a>}
             </div>
             <SourcePdf url={`/api/v1/source/${id}/paper.pdf`} sourcePage={selected.page} questionNumber={selected.number} sourceText={displayText(selected.original).split("\n")[0] ?? ""} regions={selected.original.sourceRegions ?? selected.original.blocks.flatMap((block) => block.type === "table" ? [{ page: block.page, bounds: block.bounds }] : [])} />
           </section>}

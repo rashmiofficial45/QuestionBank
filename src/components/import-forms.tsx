@@ -17,35 +17,68 @@ import { useDraftBuffer } from "@/components/use-draft-buffer";
 import { QuestionContent } from "@/components/question-content";
 import { OptionContent } from "@/components/option-content";
 
-function PdfFileField({ name, label, required, hint, disabled }: {
-  name: string; label: string; required?: boolean; hint?: string; disabled: boolean;
+function PdfFileField({ name, label, hint, disabled }: {
+  name: string; label: string; hint: string; disabled: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
-  const [selected, setSelected] = useState(false);
+  const [fileName, setFileName] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState("");
   const id = `upload-${name}`;
 
   useEffect(() => {
     const form = ref.current?.form;
-    const reset = () => setSelected(false);
+    const reset = () => { setFileName(""); setError(""); };
     form?.addEventListener("reset", reset);
     return () => form?.removeEventListener("reset", reset);
   }, []);
 
-  return <div className="field admin-pdf-field">
-    <label htmlFor={id}><FileText size={16} aria-hidden="true" />{label}</label>
-    <div className="pdf-file-control" data-selected={selected || undefined}>
-      <Input ref={ref} id={id} type="file" name={name} accept=".pdf,application/pdf" required={required} disabled={disabled}
-        aria-describedby={hint ? `${id}-hint` : undefined} onChange={(event) => setSelected(Boolean(event.currentTarget.files?.length))} />
-      {selected && <Button className="pdf-file-clear" type="button" variant="outline" size="icon-sm"
-        aria-label={`Remove ${label.replace(" (optional)", "")}`} disabled={disabled} onClick={() => {
+  return <div className="min-w-0">
+    <div className="pdf-drop-zone" data-dragging={dragging || undefined} data-filled={Boolean(fileName) || undefined}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = disabled ? "none" : "copy";
+        if (!disabled) setDragging(true);
+      }} onDragLeave={(event) => {
+        if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDragging(false);
+      }} onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        const input = ref.current;
+        if (!input || disabled) return;
+        const { files } = event.dataTransfer;
+        if (files.length !== 1 || !/\.pdf$/i.test(files[0].name) || files[0].size > 10 * 1024 * 1024) {
+          setError("Drop one PDF up to 10 MB.");
+          return;
+        }
+        input.files = files;
+        setFileName(files[0].name);
+        setError("");
+      }}>
+      <input ref={ref} id={id} className="sr-only" type="file" name={name} accept=".pdf,application/pdf" required disabled={disabled}
+        aria-label={label} aria-describedby={`${id}-hint`} onChange={(event) => {
+          setFileName(event.currentTarget.files?.[0]?.name ?? "");
+          setError("");
+        }} />
+      <label htmlFor={id} className="pdf-drop-label">
+        <span className="tile-icon"><FileText size={19} aria-hidden="true" /></span>
+        <strong>{label}</strong>
+        <span id={`${id}-hint`} className="text-sm text-muted-foreground">{hint}</span>
+        {fileName ? <span className="pdf-drop-filename" title={fileName}>{fileName}</span>
+          : <span className="pdf-drop-browse">Drop PDF or browse</span>}
+      </label>
+      {fileName && <Button className="pdf-drop-remove" type="button" variant="outline" size="icon-sm"
+        aria-label={`Remove ${label}`} disabled={disabled} onClick={() => {
           const input = ref.current;
           if (!input) return;
           input.value = "";
-          setSelected(false);
+          setFileName("");
+          setError("");
           input.focus();
         }}><X /></Button>}
     </div>
-    {hint && <p id={`${id}-hint`} className="text-sm font-normal text-muted-foreground">{hint}</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
   </div>;
 }
 
@@ -56,11 +89,10 @@ export function UploadForm() {
       <label className="field">Paper title <Input name="title" required maxLength={120} placeholder="Polity PT-01" /></label>
       <label className="field">Subject <Input name="subject" required maxLength={60} placeholder="Polity" /></label>
     </div>
-    <PdfFileField name="paper" label="Question paper PDF" required disabled={pending} />
-    <PdfFileField name="key" label="Answer key only PDF (optional)" disabled={pending}
-      hint="Attach a separate key only if you want to cross-check the answers." />
-    <PdfFileField name="detailed" label="Answer key with detailed explanations PDF" required disabled={pending}
-      hint="Use a key followed by numbered explanations, or a PDF with the answer letter next to each question number." />
+    <div className="field-grid">
+      <PdfFileField name="paper" label="Questions PDF" hint="The question paper and its choices." disabled={pending} />
+      <PdfFileField name="answers" label="Answers PDF" hint="Answer key, with optional explanations." disabled={pending} />
+    </div>
     {state.error && <p className="form-error" role="alert">{state.error}</p>}
     <div><Button type="submit" disabled={pending}><FileUp size={17} />{pending ? "Uploading…" : "Upload and process"}</Button></div>
   </form>;

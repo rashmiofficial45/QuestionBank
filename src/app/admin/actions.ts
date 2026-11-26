@@ -26,24 +26,17 @@ async function validPDF(file: FormDataEntryValue | null): Promise<File | null> {
   return signature === "%PDF-" ? file : null;
 }
 
-function fileProvided(value: FormDataEntryValue | null) {
-  return value !== null && (!(value instanceof File) || value.size > 0);
-}
-
 export async function uploadPapers(_previous: FormStatus, form: FormData): Promise<FormStatus> {
   await requireAdmin();
   const meta = uploadMeta.safeParse({ title: form.get("title"), subject: form.get("subject") });
   if (!meta.success) return { error: "Enter a paper title and a subject." };
-  const keyInput = form.get("key");
-  const [paper, key, detailed] = await Promise.all([validPDF(form.get("paper")), validPDF(keyInput), validPDF(form.get("detailed"))]);
-  if (!paper || (fileProvided(keyInput) && !key)) return { error: "Select valid paper and answer key PDFs up to 10 MB each." };
-  if (!detailed) return { error: "Attach the PDF containing both the answer key and detailed explanations (up to 10 MB)." };
+  const [paper, answers] = await Promise.all([validPDF(form.get("paper")), validPDF(form.get("answers"))]);
+  if (!paper || !answers) return { error: "Attach a valid questions PDF and an answers PDF, up to 10 MB each." };
   const id = crypto.randomUUID();
   const directory = join(storageRoot(), id);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   try {
-    for (const [name, file] of [["paper.pdf", paper], ["key.pdf", key], ["detailed.pdf", detailed]] as const) {
-      if (!file) continue;
+    for (const [name, file] of [["paper.pdf", paper], ["answers.pdf", answers]] as const) {
       const handle = await open(join(directory, name), "wx", 0o600);
       try {
         await handle.writeFile(new Uint8Array(await file.arrayBuffer()));
@@ -57,9 +50,9 @@ export async function uploadPapers(_previous: FormStatus, form: FormData): Promi
   }
   try {
     await db.transaction(async (tx) => {
-      await tx.insert(imports).values({ id, ...meta.data, paperName: paper.name.slice(0, 255), keyName: key?.name.slice(0, 255) ?? "" });
+      await tx.insert(imports).values({ id, ...meta.data, paperName: paper.name.slice(0, 255), keyName: answers.name.slice(0, 255) });
       await tx.insert(editorialEvents).values({ importId: id, type: "Uploaded",
-        detail: "Queued the question paper and the detailed answer PDF." });
+        detail: "Queued the questions and answers PDFs." });
     });
   } catch (error) {
     console.error(JSON.stringify({ event: "import.queue_failed", id, reason: error instanceof Error ? error.name : "unknown" }));

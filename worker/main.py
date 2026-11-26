@@ -60,8 +60,12 @@ def process(conn, job):
         explanation = folder / "explanations.pdf"
         key = folder / "key.pdf"
         detailed = folder / "detailed.pdf"
+        answers = folder / "answers.pdf"
         fingerprints = hashlib.sha256()
-        for source in [folder / "paper.pdf", key, explanation, detailed]:
+        sources = [folder / "paper.pdf", key, explanation, detailed]
+        if answers.is_file():
+            sources.append(answers)
+        for source in sources:
             fingerprints.update(source.name.encode())
             if source.is_file():
                 with source.open("rb") as handle:
@@ -69,7 +73,8 @@ def process(conn, job):
         checkpoint = folder / "page-checkpoints" / fingerprints.hexdigest()
         items = extract(folder / "paper.pdf", key if key.is_file() else None, artifacts, stage,
                         explanation=explanation if explanation.is_file() else None,
-                        detailed=detailed if detailed.is_file() else None, checkpoint=checkpoint)
+                        detailed=detailed if detailed.is_file() else None,
+                        answer_document=answers if answers.is_file() else None, checkpoint=checkpoint)
         with conn.transaction():
             confirmed = conn.execute("""
                 update paper_imports set status='ready', stage='Drafts ready', error=null, lease_until=null

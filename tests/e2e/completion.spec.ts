@@ -12,8 +12,8 @@ test("can cancel deletion or delete an unpublished PDF import", async ({ page })
   await page.goto("/admin/imports/new");
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("General");
-  await page.getByLabel("Question paper PDF").setInputFiles(join(fixtures!, "combined.pdf"));
-  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("A"));
+  await page.getByLabel("Questions PDF").setInputFiles(join(fixtures!, "combined.pdf"));
+  await page.getByLabel("Answers PDF").setInputFiles(detailedFixture("A"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText(/1 extracted/)).toBeVisible({ timeout: 35_000 });
   const importUrl = page.url();

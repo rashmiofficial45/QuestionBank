@@ -1,6 +1,48 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
-import { polityDetailedPaper } from "./detailed-fixture";
+import { polityDetailedPaper, textPdfFixture } from "./detailed-fixture";
+
+for (const withExplanation of [false, true]) {
+  test(`imports an answer PDF ${withExplanation ? "with a separate explanation section" : "containing only the key"}`, async ({ page }) => {
+    test.skip(process.env.EDITORIAL_TEST_DATABASE !== "1", "Use an isolated database.");
+    const title = `Two PDF format ${withExplanation ? "mixed" : "key"} ${Date.now()}`;
+    await page.goto("/admin/imports/new");
+    await expect(page.locator('input[type="file"]')).toHaveCount(2);
+    await page.getByLabel("Paper title").fill(title);
+    await page.getByLabel("Subject").fill("General");
+    await page.getByLabel("Questions PDF", { exact: true }).setInputFiles(
+      textPdfFixture(["1. Which number is even?", "(a) One", "(b) Two"], "questions.pdf"),
+    );
+    const answer = textPdfFixture(["Answer Key", "1. B", ...(withExplanation ? ["Explanations", "1. Two is divisible by two."] : [])]);
+    await page.locator(".pdf-drop-zone").filter({ hasText: "Answers PDF" }).evaluate((zone, bytes) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array(bytes)], "dropped-answers.pdf", { type: "application/pdf" }));
+      zone.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    }, [...answer.buffer]);
+    await expect(page.getByText("dropped-answers.pdf", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Upload and process" }).click();
+    await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
+    await page.getByRole("link", { name: "Edit", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Correct answer" })).toHaveValue("b");
+    await page.getByRole("checkbox", { name: /verified this draft/ }).check();
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByText("Draft saved.")).toBeVisible();
+    await page.getByRole("link", { name: "Publish", exact: true }).click();
+    await page.getByRole("button", { name: "Publish 1 question", exact: true }).click();
+    await expect(page.getByText("1 question published to the student bank.")).toBeVisible();
+    await page.goto(`/questions?${new URLSearchParams({ source: title })}`);
+    const question = page.getByRole("article").filter({ has: page.getByRole("link", { name: "Question 1", exact: true }) });
+    await question.getByRole("button", { name: "B. Two", exact: true }).click();
+    await expect(question.getByRole("alert")).toContainText("Correct answer");
+    if (withExplanation) {
+      const crop = page.locator("details[open]").getByRole("img", { name: /Original detailed explanation/ });
+      await crop.scrollIntoViewIfNeeded();
+      await expect.poll(() => crop.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(200);
+    } else {
+      await expect(page.getByText("Detailed explanation", { exact: true })).toHaveCount(0);
+    }
+  });
+}
 
 test("imports a Vision booklet with inline answers and shows the original explanations", async ({ page }) => {
   const sources = process.env.VISION_FIXTURE_DIR;
@@ -9,8 +51,8 @@ test("imports a Vision booklet with inline answers and shows the original explan
   await page.goto("/admin/imports/new");
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("General Studies");
-  await page.getByLabel("Question paper PDF", { exact: true }).setInputFiles(join(sources!, "Test 01 (15601) Eng QP.pdf"));
-  await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(join(sources!, "Test 01 (15601) Eng Sol.pdf"));
+  await page.getByLabel("Questions PDF", { exact: true }).setInputFiles(join(sources!, "Test 01 (15601) Eng QP.pdf"));
+  await page.getByLabel("Answers PDF").setInputFiles(join(sources!, "Test 01 (15601) Eng Sol.pdf"));
   await page.getByRole("button", { name: "Upload and process" }).click();
   await expect(page.getByText("100 extracted · 100 ready to publish · 0 flagged · 0 published")).toBeVisible({ timeout: 60_000 });
   await page.getByRole("link", { name: "Publish", exact: true }).click();
@@ -38,11 +80,9 @@ test("publishes the combined Polity answer PDF and reveals original explanations
   await page.goto("/admin/imports/new");
   await page.getByLabel("Paper title").fill(title);
   await page.getByLabel("Subject").fill("Polity");
-  const paper = page.getByLabel("Question paper PDF", { exact: true });
-  const key = page.getByLabel("Answer key only PDF (optional)", { exact: true });
-  const detailed = page.getByLabel("Answer key with detailed explanations PDF", { exact: true });
+  const paper = page.getByLabel("Questions PDF", { exact: true });
+  const detailed = page.getByLabel("Answers PDF", { exact: true });
   await expect(paper).toHaveAttribute("required", "");
-  await expect(key).not.toHaveAttribute("required", "");
   await expect(detailed).toHaveAttribute("required", "");
   await paper.setInputFiles(join(sources!, "Test-01-Polity-01-QP-23-Nov-.pdf"));
   await detailed.setInputFiles(join(sources!, polityDetailedPaper));

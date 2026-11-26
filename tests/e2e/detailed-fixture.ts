@@ -2,10 +2,13 @@ export const polityDetailedPaper = "Test-01-Polity-01-Detailed-Explaination-23-N
 
 // Minimal native-text PDF for tests whose original fixtures only contain a key.
 export function detailedFixture(...answers: string[]) {
-  const lines = [
+  return textPdfFixture([
     "Answer Key", ...answers.map((answer, index) => `${index + 1}. ${answer}`),
     ...answers.flatMap((answer, index) => [`Q${index + 1}.`, `Answer: ${answer}`, "Explanation: Refer to the answer above."]),
-  ];
+  ]);
+}
+
+export function textPdfFixture(lines: string[], name = "answers.pdf") {
   const stream = "BT /F1 12 Tf 36 750 Td " +
     lines.map((line) => `(${line.replace(/[()\\]/g, "\\$&")}) Tj 0 -20 Td`).join(" ") + " ET";
   const objects = [
@@ -23,5 +26,5 @@ export function detailedFixture(...answers: string[]) {
   });
   const xref = Buffer.byteLength(pdf);
   pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return { name: "detailed.pdf", mimeType: "application/pdf", buffer: Buffer.from(pdf) };
+  return { name, mimeType: "application/pdf", buffer: Buffer.from(pdf) };
 }

@@ -27,7 +27,7 @@ set +a
 .venv/bin/python worker/main.py
 ```
 
-Visit [the student workspace](http://127.0.0.1:3000/) or [PDF imports](http://127.0.0.1:3000/admin/imports). Upload a question paper and its detailed answer PDF. The importer supports a key followed by numbered explanations and an **Answers & Explanations** document with inline labels such as `Q 1. A`. A standalone answer key is optional and is cross-checked when supplied. The worker matches solutions by question number, verifies the answer labels, and keeps images of the original explanation pages. Open **Review** for a read-only source comparison, **Edit** to save a draft, or **Publish** to send eligible questions to the student bank. Detailed explanations open after grading and are available in submitted test reviews. Attempts and bookmarks are associated with a browser cookie.
+Visit [the student workspace](http://127.0.0.1:3000/) or [PDF imports](http://127.0.0.1:3000/admin/imports). Drop one PDF in **Questions PDF** and one in **Answers PDF**. The second PDF can contain a standalone key, a key followed by numbered explanations, or answers and explanations grouped by question. The worker matches answers by number and keeps images of the original explanations when present. Open **Review** for a read-only source comparison, **Edit** to save a draft, or **Publish** to send eligible questions to the student bank. Detailed explanations open after grading and are available in submitted test reviews. Attempts and bookmarks are associated with a browser cookie.
 
 ## Deployment boundary
 
@@ -47,7 +47,7 @@ pnpm exec playwright install chromium
 POLITY_FIXTURE_DIR=/path/to/fixtures pnpm test:e2e
 ```
 
-The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf`, `Test-01-Polity-01-Answer-Key-23-Nov-.pdf`, and `Test-01-Polity-01-Detailed-Explaination-23-Nov-.pdf`. Use a review database for this end-to-end test because it publishes the sample import. Set `CHROME_CHANNEL=chrome` to use installed Chrome. For additional OCR coverage, set `SCAN_FIXTURE_DIR` to a directory containing `scanned-paper.pdf` and `scanned-answer-key.pdf`. Set `POLITY_RASTER_FIXTURE_DIR` to include a full rasterized Polity regression in Pytest and Playwright. That directory should contain `polity-raster.pdf` and `polity-key-raster.pdf`. Set `POLITY_DETAILED_RASTER_FIXTURE` to an image-only copy of the detailed answer PDF under 10 MB to test all three scanned uploads and verified publication in Chrome. The test helpers in `worker/tests/test_extract.py` rasterize a PDF at 240 DPI with no native text layer.
+The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf`, `Test-01-Polity-01-Answer-Key-23-Nov-.pdf`, and `Test-01-Polity-01-Detailed-Explaination-23-Nov-.pdf`. Use a review database for this end-to-end test because it publishes the sample import. Set `CHROME_CHANNEL=chrome` to use installed Chrome. For additional OCR coverage, set `SCAN_FIXTURE_DIR` to a directory containing `scanned-paper.pdf` and `scanned-answer-key.pdf`. Set `POLITY_RASTER_FIXTURE_DIR` to include a full rasterized Polity regression in Pytest and Playwright. That directory should contain `polity-raster.pdf` and `polity-key-raster.pdf`. Set `POLITY_DETAILED_RASTER_FIXTURE` to an image-only copy of the detailed answer PDF under 10 MB to test a scanned questions and answers pair and verified publication in Chrome. The test helpers in `worker/tests/test_extract.py` rasterize a PDF at 240 DPI with no native text layer.
 
 ## MVP coverage
 

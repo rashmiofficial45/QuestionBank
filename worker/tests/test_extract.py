@@ -78,6 +78,26 @@ def test_actual_vision_inline_answers_and_question_paper():
     assert all(block["type"] != "table" for item in items[-3:] for block in item[2]["blocks"])
 
 
+@pytest.mark.parametrize("lines,key,with_explanation", [
+    (["1. B"], "b", False),
+    (["Q 1. A and C"], ["a", "c"], False),
+    (["Answer Key", "1. B", "Explanation 1: The second option is correct."], "b", True),
+    (["Answer Key", "1. B", "Explanations", "1. The second option is correct."], "b", True),
+    (["Answer Key", "1. B", "Q1.", "The second option is correct."], "b", True),
+    (["Q1.", "Answer: B", "Explanation: The second option is correct."], "b", True),
+    (["Q 1. A and C", "Only the first and third options are correct."], ["a", "c"], True),
+])
+def test_one_answer_pdf_detects_key_and_optional_explanations(tmp_path, lines, key, with_explanation):
+    paper = tmp_path / "paper.pdf"
+    answers = tmp_path / "answers.pdf"
+    make_pdf(paper, ["1. Which option is correct?", "(a) One", "(b) Two", "(c) Three"])
+    make_pdf(answers, lines)
+    [(_, _, content, issues)] = extract(paper, None, tmp_path, answer_document=answers)
+    assert content["answer"] == key
+    assert bool(content.get("explanationCrops")) == with_explanation
+    assert not any("detailed" in issue.lower() for issue in issues)
+
+
 @pytest.mark.parametrize("source_entry,expected", [("1, (c)", "c"), ("1.)", "c"), ("1. (b)", None)])
 def test_scanned_detailed_key_keeps_real_conflicts_for_review(tmp_path, monkeypatch, source_entry, expected):
     paper = tmp_path / "paper.pdf"

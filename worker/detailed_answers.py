@@ -14,7 +14,11 @@ EXPLANATION_HEADING = re.compile(r"^(?:Detailed\s+)?Explanation\s*:", re.I)
 KEY_TITLE = re.compile(r"\banswer\s+key\s*:?\s*$", re.I)
 KEY_CONTEXT = re.compile(r"^(?:(?:test\s+)?booklet|section|part)\b", re.I)
 INLINE_TITLE = re.compile(r"^answers\s*(?:&|and)\s*explanations$", re.I)
-INLINE_HEADING = re.compile(r"^Q(?:uestion)?\s*(\d{1,3})[.)]\s+\(?([A-L])\)?$", re.I)
+INLINE_LABEL = r"(?:\([A-L]\)|[A-L])"
+INLINE_HEADING = re.compile(rf"^Q(?:uestion)?\s*(\d{{1,3}})[.)]\s+({INLINE_LABEL}(?:\s*(?:,|&|\+|\band\b)\s*{INLINE_LABEL})*)$", re.I)
+EXPLANATION_TITLE = re.compile(r"^(?:detailed\s+|answer\s+)?explanations\s*:?$", re.I)
+NUMBERED_EXPLANATION = re.compile(r"^(?:Explanation\s+(\d{1,3})\s*[:.]|(?:Q(?:uestion)?\s*)?(\d{1,3})[.):]\s*Explanation\s*:)", re.I)
+NUMBERED_ENTRY = re.compile(r"^(?:Q(?:uestion)?\s*)?(\d{1,3})[.):](?:\s+.*)?$", re.I)
 VISION_TEST_CODE = re.compile(r"\btest\s*[-–—]\s*(\d{4,6})\b", re.I)
 VISION_COPYRIGHT = re.compile(r"^Copyright\s+©\s+by\s+Vision\s+IAS\b", re.I)
 
@@ -30,38 +34,60 @@ class Solution:
     crops: list[dict] = field(default_factory=list)
     alternate_number: int | None = None
     inline: bool = False
+    key_from_summary: bool = False
 
 
-def read_detailed_answers(doc, layouts):
+def read_detailed_answers(doc, layouts, *, allow_key_only=False):
     """Return key lines before the first solution and unambiguous question regions."""
     beginnings = []
     inline_format = any(INLINE_TITLE.fullmatch(text) for _, text in layouts[0].lines)
     vision = inline_format and any("www.visionias.in" in text.lower() for _, text in layouts[0].lines)
     inline_margin = None
+    explanation_margin = None
+    separate_section = False
     for index, layout in enumerate(layouts):
         lines = sorted(layout.lines, key=lambda pair: (round(pair[0].y0, 1), pair[0].x0))
         if not lines:
             continue
         left = min(box.x0 for box, _ in lines)
         for position, (box, text) in enumerate(lines):
-            if inline_format and (heading := INLINE_HEADING.fullmatch(text)):
+            if EXPLANATION_TITLE.fullmatch(text):
+                separate_section = True
+                continue
+            nearby = [(region, value) for region, value in lines[position + 1:position + 6]
+                      if region.y0 - box.y0 <= 80]
+            heading = INLINE_HEADING.fullmatch(text)
+            body = bool(nearby and nearby[0][0].y0 - box.y0 <= 35 and
+                        not INLINE_HEADING.fullmatch(nearby[0][1]) and
+                        re.search(r"\b[A-Za-z]{2,}\s+[A-Za-z]{2,}\b", nearby[0][1]))
+            if heading and (inline_format or (allow_key_only and body)):
                 if inline_margin is None:
                     inline_margin = box.x0
                 if abs(box.x0 - inline_margin) <= 5:
                     beginnings.append(Solution(int(heading[1]), index + 1, box.y0, heading[2].lower(), inline=True))
                 continue
+            if explicit := NUMBERED_EXPLANATION.match(text):
+                beginnings.append(Solution(int(explicit[1] or explicit[2]), index + 1, box.y0, explained=True, key_from_summary=True))
+                continue
+            if (separate_section and (numbered := NUMBERED_ENTRY.fullmatch(text))
+                    and not any(ANSWER_HEADING.fullmatch(value) for _, value in nearby[:2])):
+                if explanation_margin is None:
+                    explanation_margin = box.x0
+                if abs(box.x0 - explanation_margin) <= 5:
+                    beginnings.append(Solution(int(numbered[1]), index + 1, box.y0, explained=True, key_from_summary=True))
+                    continue
             match = QUESTION_HEADING.fullmatch(text)
             scanned_match = OCR_QUESTION_HEADING.fullmatch(text) if layout.scanned and not match else None
             if not (match or scanned_match) or box.x0 > left + 20:
                 continue
-            nearby = [(region, value) for region, value in lines[position + 1:position + 6]
-                      if region.y0 - box.y0 <= 80]
             answer = ""
             explained = False
+            has_answer_heading = False
             for offset, (_, value) in enumerate(nearby):
                 if QUESTION_HEADING.fullmatch(value):
                     break
                 if marker := ANSWER_HEADING.fullmatch(value):
+                    has_answer_heading = True
                     answer = marker[1]
                     if not answer and offset + 1 < len(nearby):
                         next_line = nearby[offset + 1][1]
@@ -77,9 +103,13 @@ def read_detailed_answers(doc, layouts):
                          and scanned_match[1][0] in "IlS" else None)
             if layout.scanned:
                 answer = re.sub(r"^\(?(?:¢c?|c¢)\)?$", "c", answer)
-            beginnings.append(Solution(int(digits), index + 1, box.y0, answer, explained, alternate_number=alternate))
+            key_from_summary = allow_key_only and not has_answer_heading and (explained or body)
+            beginnings.append(Solution(int(digits), index + 1, box.y0, answer, explained or key_from_summary,
+                                       alternate_number=alternate, key_from_summary=key_from_summary))
 
     if not beginnings:
+        if allow_key_only:
+            return layouts, {}
         raise ValueError("The detailed PDF needs numbered solutions, such as Q1 followed by Answer and Explanation.")
     first = beginnings[0]
     key_layouts = []
@@ -98,10 +128,14 @@ def read_detailed_answers(doc, layouts):
         if layout.scanned:
             lines = [(box, re.sub(r"^(\d{1,3})\s*,\s*(?=\()", r"\1.", text)) for box, text in lines]
         key_layouts.append(type(layout)(lines, [], layout.scanned))
-    if inline_format and key_on_page is None:
+    keyed_solutions = [solution for solution in beginnings if solution.answer and (solution.inline or allow_key_only)]
+    if keyed_solutions and not any(
+        re.match(r"^(?:Q(?:uestion)?\s*)?\d{1,3}(?:[.):\s]|$)", text, re.I)
+        for layout in key_layouts for _, text in layout.lines
+    ):
         key_layouts = [type(layouts[0])(
-            [(pdf.Rect(), f"{solution.number}. {solution.answer}") for solution in beginnings if solution.inline],
-            [], any(layouts[solution.page - 1].scanned for solution in beginnings if solution.inline),
+            [(pdf.Rect(), f"{solution.number}. {solution.answer}") for solution in keyed_solutions],
+            [], any(layouts[solution.page - 1].scanned for solution in keyed_solutions),
         )]
     solutions = defaultdict(list)
     cover = " ".join(text for _, text in layouts[0].lines)
@@ -142,7 +176,8 @@ def read_detailed_answers(doc, layouts):
                 continue
             if current.inline:
                 current.explained |= any(
-                    top <= box.y0 < bottom and box.x0 > inline_margin + 30 and re.search(r"[A-Za-z]{2,}", text)
+                    top <= box.y0 < bottom and re.search(r"[A-Za-z]{2,}", text)
+                    and (box.x0 > inline_margin + 30 if vision else not INLINE_HEADING.fullmatch(text))
                     for box, text in layouts[page_number - 1].lines
                 )
             if next_solution and page_number == next_solution.page and page_number != current.page:

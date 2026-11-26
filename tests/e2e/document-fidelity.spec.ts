@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
-import { detailedFixture, polityDetailedPaper } from "./detailed-fixture";
+import { polityDetailedPaper } from "./detailed-fixture";
 
 const capture = process.env.PREVIEW_SCREENSHOT_DIR;
 const scanFixture = process.env.SCAN_FIXTURE_DIR;
@@ -203,9 +203,8 @@ test("uploads scanned PDFs and stages their editable table behind OCR review", a
     await page.getByRole("link", { name: "New import" }).click();
     await page.getByLabel("Paper title").fill(title);
     await page.getByLabel("Subject").fill("Civics");
-    await page.getByLabel("Question paper PDF").setInputFiles(join(scanFixture!, "scanned-paper.pdf"));
-    await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(scanFixture!, "scanned-answer-key.pdf"));
-    await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(detailedFixture("A"));
+    await page.getByLabel("Questions PDF").setInputFiles(join(scanFixture!, "scanned-paper.pdf"));
+    await page.getByLabel("Answers PDF").setInputFiles(join(scanFixture!, "scanned-answer-key.pdf"));
     await page.getByRole("button", { name: "Upload and process" }).click();
   }
   await expect(page.getByText("1 structured table")).toBeVisible({ timeout: 35_000 });
@@ -216,7 +215,7 @@ test("uploads scanned PDFs and stages their editable table behind OCR review", a
   const table = page.getByRole("table", { name: "Question table from page 1" });
   await expect(table.getByRole("cell", { name: "Makes laws" })).toBeVisible();
   await expect(table.getByRole("cell", { name: "Interpret laws" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open answer key" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open answers PDF" })).toBeVisible();
   if (capture) await page.screenshot({ path: join(capture, "ocr-review.png") });
 
   await page.getByRole("link", { name: "Edit", exact: true }).click();
@@ -249,9 +248,8 @@ test("stages all rasterized Polity questions and tables for source review", asyn
     await page.getByRole("link", { name: "New import" }).click();
     await page.getByLabel("Paper title").fill(title);
     await page.getByLabel("Subject").fill("Polity");
-    await page.getByLabel("Question paper PDF").setInputFiles(join(rasterFixture!, "polity-raster.pdf"));
-    await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(rasterFixture!, "polity-key-raster.pdf"));
-    await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(scannedDetails ?? join(detailedFixtureDir!, polityDetailedPaper));
+    await page.getByLabel("Questions PDF").setInputFiles(join(rasterFixture!, "polity-raster.pdf"));
+    await page.getByLabel("Answers PDF").setInputFiles(scannedDetails ?? join(detailedFixtureDir!, polityDetailedPaper));
     await page.getByRole("button", { name: "Upload and process" }).click();
   }
   await expect(page.getByText("9 structured tables")).toBeVisible({ timeout: scannedDetails ? 205_000 : 55_000 });
