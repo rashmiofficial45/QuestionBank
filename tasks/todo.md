@@ -35,6 +35,7 @@ These section numbers follow the 38-section brief. The six implementation phases
 ## 2. Document fidelity
 
 - [x] Add English OCR for scanned question and answer-key pages and extract rectangular tables from native and scanned source geometry.
+- [x] Verify fully scanned question, answer-key, and detailed explanation PDFs together. The Polity regression checks 50 answers, all explanation regions, nine structured tables, and the requirement to verify drafts before publication.
 - [x] Render question cards in White and Black with shadcn/ui, inline grading, and saved practice history.
 - [x] Add conservative two-column diagnostics, combined PDFs with an explicit Answer Key page, and optional explanation PDF imports.
 - [x] Review extraction results with the user and incorporate their study-interface feedback.

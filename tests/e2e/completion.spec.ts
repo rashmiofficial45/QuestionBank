@@ -65,6 +65,35 @@ test("imports and exports CSV and JSON and resolves cross-import duplicates", as
   await expect(group).toHaveCount(0);
 });
 
+test("keeping a duplicate group preserves its drafts and dismisses it from review", async ({ page }) => {
+  const title = `Keep duplicate ${Date.now()}`;
+  const question = `Which example belongs to ${title}?`;
+  for (const suffix of ["one", "two"]) {
+    await page.goto("/admin/imports/data");
+    await page.getByLabel("Source title").fill(`${title} ${suffix}`);
+    await page.getByLabel("Subject").fill("Duplicate regression");
+    await page.getByLabel("CSV or JSON file").setInputFiles({
+      name: "questions.csv", mimeType: "text/csv",
+      buffer: Buffer.from(`question,option_a,option_b,answer\n${question},First,Second,a\n`),
+    });
+    await page.getByRole("button", { name: "Import drafts" }).click();
+    await expect(page.getByText(/1 extracted.*1 ready to publish/)).toBeVisible();
+  }
+  await page.goto("/admin/duplicates");
+  const group = page.locator("section").filter({ hasText: question });
+  await expect(group.getByRole("link")).toHaveCount(2);
+  const links = await group.getByRole("link").evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href")!));
+  await group.getByRole("button", { name: "Keep these questions" }).click();
+  await expect(group).toHaveCount(0);
+  await page.reload();
+  await expect(group).toHaveCount(0);
+  for (const link of links) {
+    await page.goto(link);
+    await expect(page.getByText(question, { exact: true })).toBeVisible();
+    await expect(page.getByText(/1 extracted.*1 ready to publish/)).toBeVisible();
+  }
+});
+
 test("saves editorial settings and uses them as timed test defaults", async ({ page }) => {
   await page.goto("/admin/settings");
   await page.getByLabel("Duration (minutes)").fill("35");
@@ -76,6 +105,38 @@ test("saves editorial settings and uses them as timed test defaults", async ({ p
   await expect(page.locator(`input[value="${subject}"]`)).toBeVisible();
   await page.goto("/practice");
   await expect(page.getByLabel("Duration (minutes)")).toHaveValue("35");
+});
+
+test("enforces classification hierarchy and supports rename and removal", async ({ page }) => {
+  const subject = `Admin subject ${Date.now()}`;
+  const add = async (type: string, name: string, parent?: string) => {
+    await page.getByLabel("Classification type").selectOption(type);
+    if (parent) await page.getByLabel(type === "topic" ? "Parent subject" : "Parent topic").selectOption({ label: parent });
+    await page.getByLabel("Name", { exact: true }).fill(name);
+    await page.getByRole("button", { name: "Add classification" }).click();
+    await expect(page.getByRole("group", { name: `${type[0].toUpperCase()}${type.slice(1)} ${name}`, exact: true })).toBeVisible();
+  };
+  await page.goto("/admin/settings");
+  const topic = subject + " topic";
+  const subtopic = subject + " subtopic";
+  const tag = subject + " tag";
+  await add("subject", subject);
+  await add("topic", topic, subject);
+  await add("subtopic", subtopic, `${subject} / ${topic}`);
+  await add("tag", tag);
+  const subjectRow = page.getByRole("group", { name: `Subject ${subject}`, exact: true });
+  await subjectRow.getByRole("button", { name: "Remove" }).click();
+  await expect(subjectRow.getByRole("alert")).toHaveText("Remove the child classifications first.");
+  const tagRow = page.getByRole("group", { name: `Tag ${tag}`, exact: true });
+  await tagRow.getByRole("textbox").fill("Updated " + tag);
+  await tagRow.getByRole("button", { name: "Rename" }).click();
+  const updated = page.getByRole("group", { name: `Tag Updated ${tag}`, exact: true });
+  await expect(updated).toBeVisible();
+  for (const name of [`Tag Updated ${tag}`, `Subtopic ${subtopic}`, `Topic ${topic}`, `Subject ${subject}`]) {
+    const row = page.getByRole("group", { name, exact: true });
+    await row.getByRole("button", { name: "Remove" }).click();
+    await expect(row).toHaveCount(0);
+  }
 });
 
 test("checks, resumes and reviews untimed practice and manual revision", async ({ page }) => {

@@ -4,12 +4,15 @@ const publicUrl = process.env.SECURITY_PUBLIC_URL;
 
 test("public service separates editor, original PDFs, and public source crops", async ({ page, request }) => {
   test.skip(!publicUrl, "Point SECURITY_PUBLIC_URL at an instance with the editor disabled.");
-  await page.goto(`${publicUrl}/questions?format=table&q=House%20Committee`);
+  await page.goto(`${publicUrl}/questions?${new URLSearchParams({
+    format: "table", q: "House Committee", source: process.env.POLITY_IMPORT_TITLE ?? "Polity PT-01",
+  })}`);
   const question = page.getByRole("article").filter({ has: page.getByRole("link", { name: "Question 6", exact: true }) });
   const asset = await question.locator(".question-content img").getAttribute("src");
   expect(asset).toBeTruthy();
   const crop = new URL(asset!, publicUrl);
-  for (const path of ["/admin", "/admin/imports", "/admin/imports/new", crop.pathname.replace(/[^/]+$/, "paper.pdf"), crop.pathname.replace(/[^/]+$/, "key.pdf")]) {
+  for (const path of ["/admin", "/admin/imports", "/admin/imports/new", "/admin/settings", "/admin/duplicates",
+    ...["paper.pdf", "key.pdf", "detailed.pdf"].map((file) => crop.pathname.replace(/[^/]+$/, file))]) {
     expect((await request.get(new URL(path, publicUrl).toString())).status(), path).toBe(404);
   }
   const image = await request.get(crop.toString());

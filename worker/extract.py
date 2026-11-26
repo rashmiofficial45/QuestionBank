@@ -413,6 +413,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             layouts = layouts[:key_start]
         detailed_solutions = {}
         detailed_layouts = []
+        detailed_key_scanned = False
         if detailed_doc is not None:
             detailed_pages = read_layouts(detailed_doc, "detailed answers", stage, include_tables=False, checkpoint=checkpoint)
             paper_code = PAPER_CODE.search(" ".join(text for _, text in layouts[0].lines))
@@ -420,6 +421,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             if paper_code and solution_code and int(paper_code[1]) != int(solution_code[1]):
                 raise ValueError("The paper code on the detailed answer PDF differs from the question paper.")
             detailed_layouts, detailed_solutions = read_detailed_answers(detailed_doc, detailed_pages)
+            detailed_key_scanned = any(layout.scanned and layout.lines for layout in detailed_layouts)
         if key_doc is not None:
             key_layouts = read_layouts(key_doc, "answer key", stage, include_tables=False, checkpoint=checkpoint)
         elif detailed_doc is not None:
@@ -588,12 +590,20 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             if detailed_doc is not None:
                 matched = detailed_solutions.get(original_number, [])
                 solution = matched[0] if len(matched) == 1 and not section else None
-                official = detailed_key.get(source)
+                official = detailed_key.get(source, set())
                 if solution:
                     answer_crops = render_solution(detailed_doc, output, number, solution.crops)
                     marker = f"{original_number}. {solution.answer}"
-                    inline = read_key([type(key_layouts[0])([(pdf.Rect(), marker)], [])]).get(("", original_number))
-                    if not inline or inline != official or candidates != official:
+                    inline = read_key([type(key_layouts[0])([(pdf.Rect(), marker)], [])]).get(("", original_number), set())
+                    if detailed_key_scanned:
+                        allowed_labels = option_ids | (boolean_options.keys() if is_boolean else set())
+                        official = {entry for entry in official if entry and entry.issubset(allowed_labels)}
+                        if not official:
+                            detail_issues.append("The scanned key entry is unreadable. Verify the answer from the detailed explanation against the original PDF.")
+                            official = inline
+                        if key_doc is None:
+                            candidates = official
+                    if len(inline) != 1 or None in inline or inline != official or candidates != official:
                         detail_issues.append("The answer key and detailed answer disagree or are incomplete. Verify the correct option against the PDFs.")
                         candidates = set()
                     if not solution.explained or not solution.crops or solution.incomplete:

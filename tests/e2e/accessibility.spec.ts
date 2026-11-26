@@ -68,14 +68,22 @@ test("practice controls remain accessible at phone width", async ({ page }) => {
 
 test("editorial pages have accessible controls", async ({ page }) => {
   test.skip(process.env.EDITORIAL_ACCESSIBILITY !== "1", "Enable for the local operator preview.");
-  for (const path of ["/admin", "/admin/imports", "/admin/imports/new"]) {
-    await page.goto(path);
-    await expect(page.getByRole("main")).toBeVisible();
-    await checkAccessibility(page, path);
+  for (const theme of ["White", "Black"]) {
+    await page.setViewportSize(theme === "White" ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
+    for (const path of ["/admin", "/admin/imports", "/admin/imports/new", "/admin/imports/data", "/admin/imports/data?mode=manual", "/admin/settings", "/admin/duplicates"]) {
+      await page.goto(path);
+      await expect(page.getByRole("main")).toBeVisible();
+      await checkAccessibility(page, `${theme} ${path}`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth), `${theme} ${path} fits the viewport`).toBe(theme === "White" ? 1440 : 390);
+    }
+    if (theme === "White") await page.getByRole("button", { name: "Toggle black and white theme" }).click();
   }
   await page.goto("/admin/imports");
-  await page.locator(".import-row").filter({ hasText: process.env.POLITY_IMPORT_TITLE ?? "Polity PT-01" }).first().click();
+  await page.locator(".import-row").filter({
+    has: page.getByText(process.env.POLITY_IMPORT_TITLE ?? "Polity PT-01", { exact: true }),
+  }).click();
   await page.getByRole("link", { name: "Edit", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Edit draft questions" })).toBeVisible();
   await checkAccessibility(page, "Editor");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });

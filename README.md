@@ -47,7 +47,7 @@ pnpm exec playwright install chromium
 POLITY_FIXTURE_DIR=/path/to/fixtures pnpm test:e2e
 ```
 
-The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf`, `Test-01-Polity-01-Answer-Key-23-Nov-.pdf`, and `Test-01-Polity-01-Detailed-Explaination-23-Nov-.pdf`. Use a review database for this end-to-end test because it publishes the sample import. Set `CHROME_CHANNEL=chrome` to use installed Chrome. For additional OCR coverage, set `SCAN_FIXTURE_DIR` to a directory containing `scanned-paper.pdf` and `scanned-answer-key.pdf`. Set `POLITY_RASTER_FIXTURE_DIR` to include a full rasterized Polity regression in Pytest and Playwright. That directory should contain `polity-raster.pdf` and `polity-key-raster.pdf`. The test helpers in `worker/tests/test_extract.py` rasterize a PDF at 240 DPI with no native text layer.
+The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf`, `Test-01-Polity-01-Answer-Key-23-Nov-.pdf`, and `Test-01-Polity-01-Detailed-Explaination-23-Nov-.pdf`. Use a review database for this end-to-end test because it publishes the sample import. Set `CHROME_CHANNEL=chrome` to use installed Chrome. For additional OCR coverage, set `SCAN_FIXTURE_DIR` to a directory containing `scanned-paper.pdf` and `scanned-answer-key.pdf`. Set `POLITY_RASTER_FIXTURE_DIR` to include a full rasterized Polity regression in Pytest and Playwright. That directory should contain `polity-raster.pdf` and `polity-key-raster.pdf`. Set `POLITY_DETAILED_RASTER_FIXTURE` to an image-only copy of the detailed answer PDF under 10 MB to test all three scanned uploads and verified publication in Chrome. The test helpers in `worker/tests/test_extract.py` rasterize a PDF at 240 DPI with no native text layer.
 
 ## MVP coverage
 

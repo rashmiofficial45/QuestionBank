@@ -239,7 +239,9 @@ test("stages all rasterized Polity questions and tables for source review", asyn
   test.skip(!rasterFixture || !detailedFixtureDir, "Set POLITY_RASTER_FIXTURE_DIR and POLITY_FIXTURE_DIR to the sample PDF directories.");
   await page.goto("/admin/imports");
   await expect(page.getByRole("heading", { name: "Import history" })).toBeVisible();
-  const title = "Polity PT-01 · OCR review";
+  const scannedDetails = process.env.POLITY_DETAILED_RASTER_FIXTURE;
+  const title = scannedDetails ? `Polity PT-01 · Fully scanned ${Date.now()}` : "Polity PT-01 · OCR review";
+  if (scannedDetails) test.setTimeout(240_000);
   const existing = page.locator(".import-row").filter({ has: page.getByText(title, { exact: true }) });
   if (await existing.count()) {
     await existing.first().click();
@@ -249,15 +251,42 @@ test("stages all rasterized Polity questions and tables for source review", asyn
     await page.getByLabel("Subject").fill("Polity");
     await page.getByLabel("Question paper PDF").setInputFiles(join(rasterFixture!, "polity-raster.pdf"));
     await page.getByLabel("Answer key only PDF (optional)").setInputFiles(join(rasterFixture!, "polity-key-raster.pdf"));
-    await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(join(detailedFixtureDir!, polityDetailedPaper));
+    await page.getByLabel("Answer key with detailed explanations PDF").setInputFiles(scannedDetails ?? join(detailedFixtureDir!, polityDetailedPaper));
     await page.getByRole("button", { name: "Upload and process" }).click();
   }
-  await expect(page.getByText("9 structured tables")).toBeVisible({ timeout: 55_000 });
+  await expect(page.getByText("9 structured tables")).toBeVisible({ timeout: scannedDetails ? 205_000 : 55_000 });
   await expect(page.getByText("50 extracted · 0 ready to publish · 50 flagged · 0 published")).toBeVisible();
+  await expect(page.getByText("OCR verification required", { exact: true })).toBeVisible();
+  if (scannedDetails) {
+    const exportPath = await page.getByRole("link", { name: "Export JSON" }).getAttribute("href");
+    const response = await page.request.get(exportPath!);
+    expect(response.ok()).toBe(true);
+    const rows = await response.json() as { content: { answer: string | null } }[];
+    expect(rows).toHaveLength(50);
+    expect(rows.map(({ content }) => content.answer ?? "?").join("")).toBe(
+      "BDDCA ADAAB BBCDB AADDA DBADC BDADB ACBCB CABAA BBDCA ACCAA".replaceAll(" ", "").toLowerCase(),
+    );
+  }
+  await page.getByRole("link", { name: "Publish", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Publish 0 questions" })).toBeDisabled();
   await page.getByRole("link", { name: "Review", exact: true }).click();
   await page.getByRole("link", { name: "Question 6, flagged", exact: true }).click();
   await expect(page.getByRole("table", { name: "Question table from page 3" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "House Committee", exact: true })).toBeVisible();
   await expect(page.getByText(/Question text was read using OCR/)).toBeVisible();
+  await expect(page.getByRole("img", { name: /Original detailed explanation/ }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
   if (capture) await page.screenshot({ path: join(capture, "polity-ocr-review.png") });
+  if (scannedDetails) {
+    await page.getByRole("link", { name: "Edit", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Correct answer", exact: true })).toHaveValue("a");
+    await page.getByRole("checkbox", { name: /verified this draft/ }).check();
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByText("Draft saved.")).toBeVisible();
+    await page.getByRole("link", { name: "Publish", exact: true }).click();
+    await page.getByRole("button", { name: "Publish question 6" }).click();
+    await expect(page.getByText("1 question published to the student bank.")).toBeVisible();
+    await page.goto(`/questions?${new URLSearchParams({ source: title })}`);
+    await expect(page.getByRole("link", { name: "Question 6", exact: true })).toBeVisible();
+  }
 });

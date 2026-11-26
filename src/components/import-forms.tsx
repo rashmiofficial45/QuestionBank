@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, FileUp, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, FileText, FileUp, Plus, Save, Trash2, X } from "lucide-react";
 import { saveDraft, uploadPapers } from "@/app/admin/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,8 +31,8 @@ function PdfFileField({ name, label, required, hint, disabled }: {
     return () => form?.removeEventListener("reset", reset);
   }, []);
 
-  return <div className="field">
-    <label htmlFor={id}>{label}</label>
+  return <div className="field admin-pdf-field">
+    <label htmlFor={id}><FileText size={16} aria-hidden="true" />{label}</label>
     <div className="pdf-file-control" data-selected={selected || undefined}>
       <Input ref={ref} id={id} type="file" name={name} accept=".pdf,application/pdf" required={required} disabled={disabled}
         aria-describedby={hint ? `${id}-hint` : undefined} onChange={(event) => setSelected(Boolean(event.currentTarget.files?.length))} />

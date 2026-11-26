@@ -12,7 +12,7 @@ export default async function DuplicatesPage() {
     {groups.map(({ key, rows }) => <section key={key} className="panel bank-panel admin-section">
       <h2 className="break-words">{displayText(rows[0].content).slice(0, 180)}</h2>
       {rows.map((row) => <div className="flex flex-wrap items-center justify-between gap-2 border-t py-3" key={row.id}>
-        <Link className="text-link whitespace-normal" href={`/admin/imports/${row.importId}?mode=review&q=${row.number}`}>{row.title} · Question {row.number} · {row.published ? "Published" : "Draft"}</Link>
+        <Link className="text-link duplicate-candidate" href={`/admin/imports/${row.importId}?mode=review&q=${row.number}`}>{row.title} · Question {row.number} · {row.published ? "Published" : "Draft"}</Link>
         <form action={suppressDuplicate.bind(null, row.id, key)}><Button size="sm" variant="outline">Exclude duplicate</Button></form>
       </div>)}
       <form action={keepDuplicates.bind(null, key)}><Button size="sm">Keep these questions</Button></form>

@@ -55,7 +55,7 @@ export function TaxonomyForm({ entries }: { entries: TaxonomyEntry[] }) {
 export function TaxonomyRow({ entry, parent }: { entry: TaxonomyEntry; parent?: string }) {
   const [saved, save, saving] = useActionState(saveTaxonomy, {});
   const [removed, remove, removing] = useActionState(removeTaxonomy.bind(null, entry.id), {});
-  return <div className="grid gap-2 border-t py-3">
+  return <div className="grid gap-2 border-t py-3" role="group" aria-label={`${kinds[entry.kind]} ${entry.name}`}>
     <div className="flex flex-wrap items-end gap-2">
       <form action={save} className="flex min-w-0 flex-wrap items-end gap-2">
         <input type="hidden" name="id" value={entry.id} /><input type="hidden" name="kind" value={entry.kind} />

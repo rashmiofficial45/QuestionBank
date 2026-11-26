@@ -51,15 +51,15 @@ test("Polity PDFs can be reviewed and published, then searched and practiced", a
     await page.getByRole("link", { name: "Question 1", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Question 1", exact: true })).toBeVisible();
     const originalText = await page.getByLabel("Question text").inputValue();
-    const originalOption = await page.getByLabel("Option D").inputValue();
-    const edit = page.getByLabel("Option D");
+    const originalOption = await page.getByRole("textbox", { name: "Option D", exact: true }).inputValue();
+    const edit = page.getByRole("textbox", { name: "Option D", exact: true });
     await edit.fill(originalOption + " (temporary edit)");
     await page.getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByText("Draft saved.")).toBeVisible();
     await page.reload();
-    await expect(page.getByLabel("Option D")).toHaveValue(originalOption + " (temporary edit)");
+    await expect(page.getByRole("textbox", { name: "Option D", exact: true })).toHaveValue(originalOption + " (temporary edit)");
     await expect(page.getByLabel("Question text")).toHaveValue(originalText);
-    await page.getByLabel("Option D").fill(originalOption);
+    await page.getByRole("textbox", { name: "Option D", exact: true }).fill(originalOption);
     await page.getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByText("Draft saved.")).toBeVisible();
 

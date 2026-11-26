@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Eye, FileText, History, Pencil, RefreshCw, Send } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Eye, FileScan, FileText, History, Pencil, RefreshCw, Send } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
@@ -39,6 +39,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
   const eligible = checked.filter((draft) => !draft.archivedAt && draft.generation !== draft.publishedGeneration && !draft.blockers.length);
   const published = checked.filter((draft) => draft.published && !draft.archivedAt).length;
   const flagged = checked.filter((draft) => draft.blockers.length);
+  const needsOcrReview = flagged.some((draft) => draft.issues.some((issue) => issue.includes("OCR")));
   const tableCount = checked.flatMap((draft) => draft.content.blocks).filter((block) => block.type === "table").length;
   const base = `/admin/imports/${id}`;
   const mode = query.mode === "review" || query.mode === "edit" || query.mode === "publish" || query.mode === "history" ? query.mode : "";
@@ -49,18 +50,26 @@ export default async function ImportDetails({ params, searchParams }: { params: 
     {paper.status !== "ready" ? <section className="panel bank-panel" aria-live="polite"><h2>{paper.stage}</h2>{paper.error && <p className="form-error">{paper.error}</p>}{paper.status === "failed" && <form className="form-actions" action={retryImport.bind(null, id)}><Button type="submit" variant="outline"><RefreshCw />Retry import</Button></form>}{["queued", "processing"].includes(paper.status) && <RefreshImport />}
         <Link className="text-link mt-3" href={mode === "history" ? base : `${base}?mode=history`}>{mode === "history" ? "Hide activity" : "View editorial activity"}</Link>
       </section> : <>
-      <section className="panel bank-panel">
-        <h2>Import results</h2>
-        <p className="results-label">{checked.length} extracted · {eligible.length} ready to publish · {flagged.length} flagged · {published} published</p>
-        <div className="flex flex-wrap gap-3"><a className="text-link" href={`/api/v1/admin/imports/${id}/export?format=csv`}>Export CSV</a><a className="text-link" href={`/api/v1/admin/imports/${id}/export?format=json`}>Export JSON</a></div>
-        <p className="results-label">{tableCount} structured {tableCount === 1 ? "table" : "tables"}</p>
+      <section className="panel bank-panel import-results">
+        <div className="section-heading">
+          <div>
+            <h2>Import results</h2>
+            <p className="results-label">{checked.length} extracted · {eligible.length} ready to publish · {flagged.length} flagged · {published} published</p>
+            <p className="results-label">{tableCount} structured {tableCount === 1 ? "table" : "tables"}</p>
+          </div>
+          <div className="import-export">
+            <Button size="sm" variant="outline" asChild><a href={`/api/v1/admin/imports/${id}/export?format=csv`}>Export CSV</a></Button>
+            <Button size="sm" variant="outline" asChild><a href={`/api/v1/admin/imports/${id}/export?format=json`}>Export JSON</a></Button>
+          </div>
+        </div>
+        {needsOcrReview && <div className="admin-ocr-notice"><FileScan size={19} aria-hidden="true" /><div><strong>OCR verification required</strong><p>Compare flagged drafts with the original PDF. In Edit, confirm verification before publishing.</p></div></div>}
         {typeof query.published === "string" && /^\d+$/.test(query.published) && <p className="notice" role="status">{query.published === "0" ? "No new questions were published." : `${query.published} ${query.published === "1" ? "question" : "questions"} published to the student bank.`}</p>}
-        <div className="form-actions">
+        <nav className="import-workflow" aria-label="Import workflow">
           <Button className="transition-none" variant={mode === "review" ? "default" : "outline"} asChild><Link aria-current={mode === "review" ? "page" : undefined} href={draftLink(selected?.number ?? 1, "review")}><Eye size={17} />Review</Link></Button>
           <Button className="transition-none" variant={mode === "edit" ? "default" : "outline"} asChild><Link aria-current={mode === "edit" ? "page" : undefined} href={draftLink(selected?.number ?? 1, "edit")}><Pencil size={16} />Edit</Link></Button>
-          <Button className="transition-none" variant={mode === "publish" ? "outline" : "default"} asChild><Link aria-current={mode === "publish" ? "page" : undefined} href={`${base}?mode=publish&q=${selected?.number ?? 1}`}><Send size={16} />Publish</Link></Button>
+          <Button className="transition-none" variant={mode === "publish" ? "default" : "outline"} asChild><Link aria-current={mode === "publish" ? "page" : undefined} href={`${base}?mode=publish&q=${selected?.number ?? 1}`}><Send size={16} />Publish</Link></Button>
           <Button className="transition-none" variant={mode === "history" ? "default" : "outline"} asChild><Link aria-current={mode === "history" ? "page" : undefined} href={draftLink(selected?.number ?? 1, "history")}><History size={16} />History</Link></Button>
-        </div>
+        </nav>
       </section>
       {mode === "publish" && <section className="panel bank-panel admin-section"><h2>Publication summary</h2>
         <p className="notice">{eligible.length} questions or revisions are ready for publication. {flagged.length} flagged questions require corrections.</p>
@@ -83,10 +92,13 @@ export default async function ImportDetails({ params, searchParams }: { params: 
           <div className="question-index" aria-label="Question numbers">{checked.map((draft) => <Link key={draft.id} href={draftLink(draft.number)} aria-current={draft.id === selected.id ? "page" : undefined} aria-label={`Question ${draft.number}${draft.blockers.length ? ", flagged" : ""}`} data-flagged={Boolean(draft.blockers.length)}>{draft.number}</Link>)}</div>
         </section>
         <div className={selected.page > 0 ? "review-layout" : "admin-section"}>
-          {selected.page > 0 && <section className="panel bank-panel">
-            <div className="section-heading"><div><h2>Original paper</h2><p>PDF page {selected.page}</p></div><a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/paper.pdf#page=${selected.page}`}>Open PDF <ArrowUpRight size={15} /></a></div>
-            {paper.keyName && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/key.pdf`}>Open answer key <ArrowUpRight size={15} /></a>}
-            {explanationSource && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/${explanationSource}`}>Open explanation PDF <ArrowUpRight size={15} /></a>}
+          {selected.page > 0 && <section className="panel bank-panel admin-source-panel">
+            <div className="section-heading"><div><h2>Original paper</h2><p>PDF page {selected.page}</p></div></div>
+            <div className="admin-source-links">
+              <a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/paper.pdf#page=${selected.page}`}>Open PDF <ArrowUpRight size={15} /></a>
+              {paper.keyName && <a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/key.pdf`}>Open answer key <ArrowUpRight size={15} /></a>}
+              {explanationSource && <a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/${explanationSource}`}>Open explanation PDF <ArrowUpRight size={15} /></a>}
+            </div>
             <SourcePdf url={`/api/v1/source/${id}/paper.pdf`} sourcePage={selected.page} questionNumber={selected.number} sourceText={displayText(selected.original).split("\n")[0] ?? ""} regions={selected.original.sourceRegions ?? selected.original.blocks.flatMap((block) => block.type === "table" ? [{ page: block.page, bounds: block.bounds }] : [])} />
           </section>}
           <section className="panel bank-panel">

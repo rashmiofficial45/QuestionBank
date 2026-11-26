@@ -5,6 +5,7 @@ import pymupdf
 import pytest
 
 from extract import POLITY_TABLES, extract
+from document_layout import Layout
 
 POLITY_ANSWERS = "BDDCA ADAAB BBCDB AADDA DBADC BDADB ACBCB CABAA BBDCA ACCAA".replace(" ", "").lower()
 
@@ -35,6 +36,29 @@ def test_detailed_pdf_rejects_a_different_paper_code(tmp_path):
     make_pdf(detailed, ["Test - PT - 02", "Answer Key", "1. A", "Q1.", "Answer: A", "Explanation: One."])
     with pytest.raises(ValueError, match="paper code"):
         extract(paper, None, detailed=detailed)
+
+
+@pytest.mark.parametrize("source_entry,expected", [("1, (c)", "c"), ("1.)", "c"), ("1. (b)", None)])
+def test_scanned_detailed_key_keeps_real_conflicts_for_review(tmp_path, monkeypatch, source_entry, expected):
+    paper = tmp_path / "paper.pdf"
+    detailed = tmp_path / "detailed.pdf"
+    make_pdf(paper, ["1. Which option is correct?", "(a) One", "(b) Two", "(c) Three"])
+    lines = ["Answer Key", source_entry, "Ql.", "Answer: ¢c", "Explanation: The third choice."]
+    make_pdf(detailed, lines)
+    from extract import analyze_page
+
+    def simulate_ocr(page, **kwargs):
+        if Path(page.parent.name) != detailed:
+            return analyze_page(page, **kwargs)
+        return Layout([(pymupdf.Rect(40, 40 + i * 20, 150, 50 + i * 20), line)
+                       for i, line in enumerate(lines)], [], scanned=True)
+
+    monkeypatch.setattr("extract.analyze_page", simulate_ocr)
+    [(_, _, content, issues)] = extract(paper, None, tmp_path, detailed=detailed)
+    assert content["answer"] == expected
+    assert content["explanationCrops"] == [{"page": 1, "file": "answer-1-1.png"}]
+    assert any("using OCR" in issue for issue in issues)
+    assert any("disagree" in issue for issue in issues) == (expected is None)
 
 
 def test_unrecognized_layout_is_staged_with_review_flags(tmp_path):
