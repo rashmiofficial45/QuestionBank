@@ -242,3 +242,212 @@ test("imports, publishes, and grades True/False questions", async ({ page }) => 
   const capture = process.env.PREVIEW_SCREENSHOT_DIR;
   if (capture) await page.screenshot({ path: join(capture, "true-false-review.png") });
 });
+
+test("imports statement blocks and keeps single-choice grading after editorial edits", async ({ page }) => {
+  const fixture = process.env.STATEMENTS_FIXTURE_DIR;
+  test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use a dedicated editorial test database and the statement fixtures.");
+
+  const title = `Statement format sample ${Date.now()}`;
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(title);
+  await page.getByLabel("Subject").fill("General");
+  await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "statements-paper.pdf"));
+  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "statements-key.pdf"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
+  const imported = page.url();
+
+  await page.goto(`${imported}?mode=review&q=1`);
+  const list = page.getByRole("list", { name: "Statements" });
+  await expect(list.getByRole("listitem").first()).toContainText("Statement I:");
+  await expect(list.getByRole("listitem").nth(1)).toContainText("Statement II:");
+  await page.goto(`${imported}?mode=edit&q=1`);
+  await expect(page.getByLabel("Answer interaction")).toHaveValue("single_choice");
+  await page.getByLabel("Statement II:", { exact: true }).fill("A leap year has 366 days.");
+  await page.getByRole("checkbox", { name: /verified this draft/ }).check();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Draft saved.")).toBeVisible();
+  await page.goto(`${imported}?mode=publish&q=1`);
+  await page.getByRole("button", { name: "Publish question 1" }).click();
+  await expect(page.getByText("1 question published to the student bank.")).toBeVisible();
+
+  await page.goto(`/questions?${new URLSearchParams({ format: "statements", source: title, q: "366" })}`);
+  await expect(list.locator("mark")).toHaveText("366");
+  await page.goto("/practice");
+  await page.getByLabel("Paper", { exact: true }).selectOption(title);
+  await page.getByRole("button", { name: "Start test" }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+  await expect(page.getByText("Which of the statements are correct?", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "A. Only statement I", exact: true }).click();
+  await expect(page.getByText("Answer saved", { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Submit test" }).click();
+  await expect(page.getByRole("region", { name: "Final test score" })).toContainText("-0.67 / 2");
+  await page.getByRole("link", { name: "Review answers" }).click();
+  await expect(page.locator(".option-correct")).toContainText("Both statements");
+  const capture = process.env.PREVIEW_SCREENSHOT_DIR;
+  if (capture) await page.screenshot({ path: join(capture, "statement-test-review.png") });
+});
+
+test("imports, edits, and grades an Assertion–Reason question", async ({ page }) => {
+  const fixture = process.env.ASSERTION_REASON_FIXTURE_DIR;
+  test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use a dedicated editorial test database and the Assertion–Reason fixtures.");
+
+  const title = `Assertion and Reason sample ${Date.now()}`;
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(title);
+  await page.getByLabel("Subject").fill("General");
+  await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "assertion-reason-paper.pdf"));
+  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "assertion-reason-key.pdf"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
+  const imported = page.url();
+  const pair = page.locator('dl[aria-label="Assertion and reason"]');
+
+  await page.goto(`${imported}?mode=review&q=1`);
+  await expect(pair.locator("dt")).toHaveText(["Assertion (A):", "Reason (R):"]);
+  await expect(pair.locator("dd").nth(1)).toHaveText("A week contains seven days.");
+  await page.goto(`${imported}?mode=edit&q=1`);
+  await expect(page.getByLabel("Answer interaction")).toHaveValue("single_choice");
+  await expect(page.getByRole("combobox", { name: "Correct answer", exact: true })).toHaveValue("b");
+  await page.getByRole("textbox", { name: "Reason (R):", exact: true }).fill("A week has seven days.");
+  await page.getByRole("checkbox", { name: /verified this draft/ }).check();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Draft saved.")).toBeVisible();
+  await page.goto(`${imported}?mode=publish&q=1`);
+  await page.getByRole("button", { name: "Publish question 1" }).click();
+  await expect(page.getByText("1 question published to the student bank.")).toBeVisible();
+
+  await page.goto(`/questions?${new URLSearchParams({ format: "assertion_reason", source: title, q: "seven" })}`);
+  await expect(pair.locator("mark")).toHaveText("seven");
+  await page.goto("/practice");
+  await page.getByLabel("Paper", { exact: true }).selectOption(title);
+  await page.getByRole("button", { name: "Start test" }).click();
+  await expect(pair).toBeVisible();
+  await expect(page.getByText("Select the correct answer.", { exact: true })).toBeVisible();
+  await page.locator('.test-options button[value="a"]').click();
+  await expect(page.getByText("Answer saved", { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Submit test" }).click();
+  await expect(page.getByRole("region", { name: "Final test score" })).toContainText("-0.67 / 2");
+  await page.getByRole("link", { name: "Review answers" }).click();
+  await expect(page.locator(".option-correct")).toContainText("R does not explain A");
+  await expect(page.locator(".option-incorrect")).toContainText("R correctly explains A");
+  const capture = process.env.PREVIEW_SCREENSHOT_DIR;
+  if (capture) await page.screenshot({ path: join(capture, "assertion-reason-review.png") });
+});
+
+test("publishes written answers, grades decimals, and tracks study activity", async ({ page }) => {
+  const fixture = process.env.WRITTEN_FIXTURE_DIR;
+  test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use a dedicated editorial test database and written-answer fixtures.");
+  const title = `Written answer verification ${Date.now()}`;
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(title);
+  await page.getByLabel("Subject").fill("General");
+  await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "written-paper.pdf"));
+  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "written-key.pdf"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText(/2 extracted.*2 flagged/)).toBeVisible({ timeout: 35_000 });
+  const imported = page.url();
+  await page.goto(`${imported}?mode=edit&q=1`);
+  await page.getByRole("combobox", { name: "Answer interaction" }).selectOption("numeric");
+  await page.getByRole("textbox", { name: "Question text", exact: true }).fill("6 \\times 7");
+  await page.getByRole("combobox", { name: "Text block style" }).selectOption("equation");
+  await page.getByLabel("Reference answer").fill("42");
+  await page.getByRole("checkbox", { name: /verified this draft/ }).check();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Draft saved.")).toBeVisible();
+
+  await page.goto(`${imported}?mode=edit&q=2`);
+  await page.getByRole("combobox", { name: "Answer interaction" }).selectOption("descriptive");
+  await page.getByLabel("Reference answer").fill("A reference answer for self-assessment.");
+  await page.getByRole("checkbox", { name: /verified this draft/ }).check();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Draft saved.")).toBeVisible();
+  await page.goto(`${imported}?mode=publish`);
+  await page.getByRole("button", { name: "Publish 2 questions" }).click();
+  await expect(page.getByText("2 questions published to the student bank.")).toBeVisible();
+
+  await page.goto(`/questions?${new URLSearchParams({ format: "descriptive", source: title })}`);
+  await page.getByRole("link", { name: "Question 2", exact: true }).click();
+  await expect(page.getByText("A reference answer for self-assessment.")).toHaveCount(0);
+  await page.getByLabel("Your response").fill("My draft response.");
+  await page.getByRole("button", { name: "Reveal reference answer" }).click();
+  await expect(page.getByText("A reference answer for self-assessment.")).toBeVisible();
+  await page.getByText("Study note", { exact: true }).click();
+  await page.getByRole("textbox", { name: "Study note" }).fill("Practice explaining the reasoning.");
+  await page.getByRole("button", { name: "Save note" }).click();
+  await expect(page.getByText("Note saved.")).toBeVisible();
+  await page.reload();
+  await page.getByText("Study note", { exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Study note" })).toHaveValue("Practice explaining the reasoning.");
+
+  await page.goto("/practice");
+  await page.getByLabel("Paper", { exact: true }).selectOption(title);
+  await page.getByRole("button", { name: "Start test" }).click();
+  await expect(page.getByRole("heading", { name: "Question 1 of 1" })).toBeVisible();
+  await expect(page.locator("math")).toBeVisible();
+  await page.getByLabel("Your response").fill("042.00");
+  await page.getByRole("button", { name: "Save response" }).click();
+  await expect(page.getByText("Answer saved")).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Submit test" }).click();
+  await expect(page.getByRole("region", { name: "Final test score" })).toContainText("2 / 2");
+  await page.getByRole("link", { name: "Review answers" }).click();
+  await expect(page.getByRole("table", { name: "All test answers" })).toContainText("042.00");
+  const capture = process.env.PREVIEW_SCREENSHOT_DIR;
+  if (capture) await page.screenshot({ path: join(capture, "written-test-review.png") });
+  await page.goto("/progress");
+  await expect(page.getByRole("img", { name: /daily study attempts/i })).toBeVisible();
+  await page.getByText("Daily attempt counts", { exact: true }).click();
+  await expect(page.getByRole("table", { name: "Daily attempt counts" })).toBeVisible();
+  if (capture) await page.screenshot({ path: join(capture, "study-analytics.png") });
+});
+
+test("grades matching pairs and chronological order", async ({ page }) => {
+  const fixture = process.env.WRITTEN_FIXTURE_DIR;
+  test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use a dedicated editorial test database and editable fixtures.");
+  const title = `Structured answer verification ${Date.now()}`;
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(title);
+  await page.getByLabel("Subject").fill("General");
+  await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "written-paper.pdf"));
+  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "written-key.pdf"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText(/2 extracted.*2 flagged/)).toBeVisible({ timeout: 35_000 });
+  const imported = page.url();
+
+  for (const [number, interaction] of [[1, "pair_matching"], [2, "ordering"]] as const) {
+    await page.goto(`${imported}?mode=edit&q=${number}`);
+    await page.getByRole("combobox", { name: "Answer interaction" }).selectOption(interaction);
+    if (interaction === "pair_matching") {
+      await page.getByLabel("Matching prompts").fill("First quantity\nSecond quantity");
+    }
+    await page.getByLabel("Correct sequence of option labels").fill("B, A");
+    await page.getByRole("checkbox", { name: /verified this draft/ }).check();
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByText("Draft saved.")).toBeVisible();
+  }
+  await page.goto(`${imported}?mode=publish`);
+  await page.getByRole("button", { name: "Publish 2 questions" }).click();
+  await expect(page.getByText("2 questions published to the student bank.")).toBeVisible();
+  await page.goto("/practice");
+  await page.getByLabel("Paper", { exact: true }).selectOption(title);
+  await page.getByRole("button", { name: "Start test" }).click();
+  await page.getByRole("combobox", { name: "First quantity" }).selectOption("b");
+  await page.getByRole("combobox", { name: "Second quantity" }).selectOption("a");
+  await page.getByRole("button", { name: "Save response" }).click();
+  await expect(page.getByText("Answer saved")).toBeVisible();
+  await page.getByRole("navigation", { name: "Jump to a test question" }).getByRole("link", { name: "Next question" }).click();
+  await page.getByRole("combobox", { name: "Position 1" }).selectOption("a");
+  await page.getByRole("combobox", { name: "Position 2" }).selectOption("b");
+  await page.getByRole("button", { name: "Save response" }).click();
+  await expect(page.getByText("Answer saved")).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Submit test" }).click();
+  await expect(page.getByRole("region", { name: "Final test score" })).toContainText("1.33 / 4");
+  await page.getByRole("link", { name: "Review answers" }).click();
+  await expect(page.getByRole("table", { name: "All test answers" })).toContainText("First quantity");
+  const capture = process.env.PREVIEW_SCREENSHOT_DIR;
+  if (capture) await page.screenshot({ path: join(capture, "matching-test-review.png") });
+});

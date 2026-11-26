@@ -102,6 +102,7 @@ export const attempts = pgTable("study_attempts", {
   questionId: uuid("question_id").notNull().references(() => questions.id),
   optionId: text("option_id"),
   optionIds: text("option_ids").array(),
+  responseText: text("response_text"),
   revision: integer().notNull().default(1),
   sessionId: uuid("session_id").references(() => practiceSessions.id),
   mode: text().$type<"practice" | "bank">(),
@@ -114,3 +115,9 @@ export const bookmarks = pgTable("study_bookmarks", {
   questionId: uuid("question_id").notNull().references(() => questions.id),
   createdAt: created(),
 }, (table) => [unique().on(table.profileId, table.questionId)]);
+
+export const studyNotes = pgTable("study_notes", {
+  profileId: uuid("profile_id").notNull(),
+  questionId: uuid("question_id").notNull().references(() => questions.id),
+  text: text().notNull(),
+}, (table) => [primaryKey({ columns: [table.profileId, table.questionId] })]);

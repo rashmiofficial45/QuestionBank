@@ -29,6 +29,14 @@ test("renders interactive cards in both themes, including structured tables and 
   await expect(first.getByRole("cell", { name: "House Committee", exact: true })).toBeVisible();
   if (capture) await page.screenshot({ path: join(capture, "structured-tables.png") });
 
+  await page.goto("/questions?subject=Polity&format=statements&q=Fundamental");
+  const statementCard = page.getByRole("article").filter({ has: page.getByRole("link", { name: "Question 9", exact: true }) });
+  const statements = statementCard.getByRole("list", { name: "Statements" });
+  await expect(statements.getByRole("listitem")).toHaveCount(4);
+  await expect(statements.locator("mark").filter({ hasText: "Fundamental" })).toBeVisible();
+  await expect(statementCard.getByText(/How many of the above provisions/)).toBeVisible();
+  if (capture) await page.screenshot({ path: join(capture, "statement-questions.png") });
+
   await page.goto("/questions?q=sea");
   await expect(page.locator("mark").filter({ hasText: /^Sea$/ }).first()).toBeVisible();
   const bank = page.getByRole("article").filter({ has: page.getByRole("link", { name: "Question 1", exact: true }) });

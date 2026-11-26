@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect, RedirectType } from "next/navigation";
 import { z } from "zod";
@@ -8,8 +8,10 @@ import { db } from "@/database";
 import { attempts, practiceSessions, questions, questionVersions } from "@/database/schema";
 import { activeSession, matchVersion, versionLookup } from "@/modules/practice";
 import { activeQuestion, getProfile } from "@/modules/study";
-import { gradeSelection } from "@/lib/choice-selection";
+import { gradeResponse } from "@/lib/practice-scoring";
+import { isRanked } from "@/lib/ranked-answer";
 import { validSelection } from "@/lib/content";
+import { gradeWritten, isWritten, normalizeWritten } from "@/lib/written-answer";
 
 export type PracticeAction = { error?: string; saved?: boolean };
 
@@ -28,7 +30,7 @@ export async function startPractice(_previous: PracticeAction, form: FormData): 
   if (current) redirect(`/practice/${current.id}?q=1`);
   const { source, minutes, marks, penalty } = settings.data;
   const manifest = await db.select({ id: questions.id, revision: questions.revision }).from(questions)
-    .where(and(activeQuestion, source ? eq(questions.source, source) : undefined))
+    .where(and(activeQuestion, sql`${questions.content}->>'interaction' <> 'descriptive'`, source ? eq(questions.source, source) : undefined))
     .orderBy(questions.source, questions.number, questions.id).limit(501);
   if (!manifest.length) return { error: "There are no published questions for this paper." };
   if (manifest.length > 500) return { error: "Choose one paper with 500 or fewer questions." };
@@ -56,11 +58,21 @@ export async function saveResponse(id: string, questionId: string, _state: Pract
         .where(and(eq(questionVersions.questionId, questionId), eq(questionVersions.revision, pinned.revision)));
       const submitted = form.getAll("option");
       const values = selection === "clear" || (submitted.length === 1 && submitted[0] === "") ? [] : submitted;
-      const ids = version && validSelection(version.content, values);
-      if (!ids) return { error: "Choose a valid option." };
-      const multiple = version.content.interaction === "multiple_choice";
-      response.option = multiple ? undefined : ids[0];
-      response.options = multiple && ids.length ? ids : undefined;
+      if (version && isWritten(version.content.interaction)) {
+        const input = z.string().trim().min(1).max(8000).safeParse(values[0]);
+        if (values.length && (!input.success || values.length > 1 || !normalizeWritten(version.content.interaction, input.data))) {
+          return { error: "Enter a valid response before saving." };
+        }
+        response.option = input.success ? input.data : undefined;
+        response.options = undefined;
+      } else {
+        const ids = version && validSelection(version.content, values);
+        if (!ids) return { error: "Complete the response using valid, distinct options." };
+        const interaction = version.content.interaction;
+        const multiple = interaction === "multiple_choice" || isRanked(interaction);
+        response.option = multiple ? undefined : ids[0];
+        response.options = multiple && ids.length ? ids : undefined;
+      }
     }
     if (form.get("mark") === "toggle") response.marked = !response.marked;
     await tx.update(practiceSessions).set({ responses: { ...session.responses, [questionId]: response } }).where(eq(practiceSessions.id, id));
@@ -81,9 +93,12 @@ export async function finishPractice(id: string) {
       const { option, options } = session.responses[entry.id] ?? {};
       const version = matchVersion(versions, entry);
       if (!version) return [];
-      const correct = gradeSelection(version.content.answer, options ?? option);
+      const { answer, interaction } = version.content;
+      const written = isWritten(interaction);
+      const correct = gradeResponse({ answer, selected: options ?? option, interaction });
       if (correct === null) return [];
-      return [{ profileId, questionId: entry.id, revision: entry.revision, optionId: option ?? null, optionIds: options ?? null, sessionId: id, mode: "practice" as const, correct }];
+      return [{ profileId, questionId: entry.id, revision: entry.revision, optionId: written ? null : option ?? null, optionIds: options ?? null,
+        responseText: written ? option ?? null : null, sessionId: id, mode: "practice" as const, correct }];
     });
     if (recorded.length) await tx.insert(attempts).values(recorded);
     await tx.update(practiceSessions).set({ submittedAt: new Date() }).where(eq(practiceSessions.id, id));

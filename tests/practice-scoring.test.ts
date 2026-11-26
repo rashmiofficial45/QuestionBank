@@ -23,3 +23,13 @@ it("grades multiple answers as an exact set, independent of selection order", ()
     { answer: ["a", "c"], selected: [] },
   ], 6, 2)).toEqual({ correct: 1, incorrect: 2, unanswered: 1, points: 2, maximum: 24 });
 });
+
+it("grades written answers by normalized value and matching answers by position", () => {
+  expect(scoreTest([
+    { interaction: "numeric", answer: "42", selected: "042.00" },
+    { interaction: "short_answer", answer: "New Delhi", selected: " new  delhi " },
+    { interaction: "pair_matching", answer: ["b", "a"], selected: ["a", "b"] },
+    { interaction: "ordering", answer: ["b", "a"], selected: ["b", "a"] },
+    { interaction: "numeric", answer: "42", selected: "42.00001" },
+  ], 6, 2)).toEqual({ correct: 3, incorrect: 2, unanswered: 0, points: 14, maximum: 30 });
+});

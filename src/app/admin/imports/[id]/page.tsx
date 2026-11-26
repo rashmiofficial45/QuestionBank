@@ -9,6 +9,9 @@ import { EditForm, RefreshImport } from "@/components/import-forms";
 import { ImportStatus } from "@/components/import-list";
 import { publicationIssues, questionSchema } from "@/lib/content";
 import { choiceIds } from "@/lib/choice-selection";
+import { isRanked } from "@/lib/ranked-answer";
+import { isWritten } from "@/lib/written-answer";
+import { rankedLabels } from "@/components/ranked-fields";
 import { getDrafts, getImport } from "@/modules/imports";
 import { publishImport, retryImport } from "../../actions";
 
@@ -87,10 +90,13 @@ export default async function ImportDetails({ params, searchParams }: { params: 
                 classification={{ subject: selected.subject ?? paper.subject, topic: selected.topic ?? "General", difficulty: selected.difficulty ?? "Unrated", tags: selected.tags }} />
               </> : <>
                 <QuestionContent blocks={selected.content.blocks} importId={id} administrative />
-                <ul className="review-options">{selected.content.options.map((option, index) => {
+                {isWritten(selected.content.interaction) ? <p className="notice whitespace-pre-wrap"><strong>Reference answer</strong> {selected.content.answer}</p>
+                : isRanked(selected.content.interaction) ? <p className="notice whitespace-pre-wrap"><strong>Reference sequence</strong>{"\n"}{
+                  rankedLabels(selected.content.options, choiceIds(selected.content.answer), selected.content.interaction === "pair_matching" ? selected.content.prompts : undefined)
+                }</p> : <ul className="review-options">{selected.content.options.map((option, index) => {
                   const correct = choiceIds(selected.content.answer).includes(option.id);
                   return <li key={`${option.id}-${index}`} className={`review-option ${correct ? "correct" : ""}`}><strong>{option.label}.</strong> {option.text} {correct && <Check size={14} className="inline" aria-label="Correct answer" />}</li>;
-                })}</ul>
+                })}</ul>}
                 {selected.content.explanation && <p className="notice">{selected.content.explanation}</p>}
               </>}
             <div className="question-nav admin-section">

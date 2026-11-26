@@ -12,8 +12,11 @@ import { PracticePalette } from "@/components/practice-palette";
 import { QuestionContent } from "@/components/question-content";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatPoints, scoreTest } from "@/lib/practice-scoring";
-import { choiceIds, gradeSelection, type ChoiceSelection } from "@/lib/choice-selection";
+import { formatPoints, gradeResponse, scoreTest } from "@/lib/practice-scoring";
+import { choiceIds, type ChoiceSelection } from "@/lib/choice-selection";
+import { isWritten } from "@/lib/written-answer";
+import { isRanked } from "@/lib/ranked-answer";
+import { rankedLabels } from "@/components/ranked-fields";
 import { matchVersion, ownedSession, practiceVersions } from "@/modules/practice";
 import { bookmarkIds, getProfile } from "@/modules/study";
 import { setBookmark } from "../../actions";
@@ -43,15 +46,18 @@ export default async function TestPage({ params, searchParams }: { params: Promi
   const entries = session.manifest.map((entry) => {
     const item = session.responses[entry.id];
     const selected = item?.options ?? item?.option;
+    const content = submitted ? matchVersion(versions, entry)?.content : undefined;
     return {
       answered: choiceIds(selected).length > 0, marked: Boolean(item?.marked),
-      correct: submitted ? gradeSelection(matchVersion(versions, entry)?.content.answer, selected) ?? undefined : undefined,
+      correct: submitted ? gradeResponse({ answer: content?.answer ?? null, selected, interaction: content?.interaction }) ?? undefined : undefined,
     };
   });
   const answered = entries.filter((entry) => entry.answered).length;
-  const score = submitted ? scoreTest(session.manifest.map((entry) => ({
-    answer: matchVersion(versions, entry)?.content.answer ?? null, selected: session.responses[entry.id]?.options ?? session.responses[entry.id]?.option,
-  })), session.correctPoints, session.wrongPoints) : null;
+  const score = submitted ? scoreTest(session.manifest.map((entry) => {
+    const content = matchVersion(versions, entry)?.content;
+    const response = session.responses[entry.id];
+    return { answer: content?.answer ?? null, selected: response?.options ?? response?.option, interaction: content?.interaction };
+  }), session.correctPoints, session.wrongPoints) : null;
   if (session.submittedAt && score && !reviewing) {
     const seconds = Math.max(0, Math.floor((Math.min(session.submittedAt.getTime(), session.endsAt.getTime()) - session.createdAt.getTime()) / 1000));
     const topics = summarizeTopics(session.manifest.flatMap((entry, position) => {
@@ -64,7 +70,9 @@ export default async function TestPage({ params, searchParams }: { params: Promi
   const answerSummary = reviewing ? session.manifest.map((entry, position) => {
     const content = matchVersion(versions, entry)?.content;
     const format = (selection?: ChoiceSelection | null) => {
+      if (content && isWritten(content.interaction)) return typeof selection === "string" ? selection : undefined;
       const ids = choiceIds(selection);
+      if (content && isRanked(content.interaction)) return rankedLabels(content.options, ids, content.interaction === "pair_matching" ? content.prompts : undefined) || undefined;
       return content?.options.filter((option) => ids.includes(option.id)).map((option) => `${option.label}. ${option.text}`).join("; ") || undefined;
     };
     const selected = session.responses[entry.id];
@@ -100,6 +108,7 @@ export default async function TestPage({ params, searchParams }: { params: Promi
       </div>
       <QuestionContent blocks={question.content.blocks} importId={question.importId} />
       <TestOptions key={pinned.id} id={id} questionId={pinned.id} options={question.content.options} interaction={question.content.interaction} response={response}
+        prompts={question.content.interaction === "pair_matching" ? question.content.prompts : undefined}
         ended={submitted} answer={submitted ? question.content.answer : undefined} />
       {submitted && question.content.explanation && <details className="source-text"><summary>Explanation</summary><p>{question.content.explanation}</p></details>}
     </article>

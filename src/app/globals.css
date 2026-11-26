@@ -245,6 +245,10 @@ h2 { font-size: 20px; font-weight: 665; letter-spacing: -.035em; }
 .question-content ol { list-style: decimal; padding-left: 1.4em; margin-block: 8px; }
 .question-content li + li { margin-top: 5px; }
 .question-content li::marker { color: var(--muted-foreground); }
+.question-content .statement-list { list-style: none; padding-left: 0; }
+.statement-list li { display: grid; grid-template-columns: fit-content(35%) minmax(0, 1fr); gap: 0.65rem; }
+.statement-list li > span:first-child { color: var(--muted-foreground); font-weight: 600; }
+.statement-list li > span:last-child { white-space: pre-line; }
 .question-content > p + p { margin-top: 8px; }
 .question-table { margin-block: 12px; line-height: 1.5; max-width: 100%; }
 .question-table th, .question-table td { padding: 8px 10px; border-right: 1px solid var(--border); }

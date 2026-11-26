@@ -41,6 +41,8 @@
 - [x] Add multiple-correct MCQs with editorial answer keys and exact-set grading.
 - [x] Import explicit multiple-answer PDF keys and flag them for editorial verification.
 - [x] Import, edit, filter, and grade True/False questions with explicit source options.
+- [x] Preserve statement lists and source labels in imports, support editorial edits, and filter and grade statement-based questions.
+- [x] Import, edit, filter, and grade explicitly labeled Assertion–Reason questions.
 - [ ] Extend the remaining question formats.
 - [ ] Review student features with the user.
 

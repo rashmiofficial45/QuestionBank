@@ -1,12 +1,24 @@
 import { gradeSelection, type ChoiceSelection } from "./choice-selection";
+import { gradeWritten, isWritten } from "./written-answer";
+import { isRanked } from "./ranked-answer";
 
-export type ScoreRow = { answer: ChoiceSelection | null; selected?: ChoiceSelection };
+export type ScoreRow = { answer: ChoiceSelection | null; selected?: ChoiceSelection; interaction?: string };
+
+export function gradeResponse({ answer, selected, interaction }: ScoreRow) {
+  if (interaction && isRanked(interaction)) {
+    if (!Array.isArray(selected) || !selected.length) return null;
+    return Array.isArray(answer) && selected.length === answer.length && selected.every((id, index) => id === answer[index]);
+  }
+  return interaction && isWritten(interaction)
+    ? gradeWritten(interaction, typeof answer === "string" ? answer : null, typeof selected === "string" ? selected : null)
+    : gradeSelection(answer, selected);
+}
 
 export function scoreTest(rows: ScoreRow[], correctPoints: number, wrongPoints: number) {
   let correct = 0;
   let incorrect = 0;
-  for (const { answer, selected } of rows) {
-    const result = gradeSelection(answer, selected);
+  for (const row of rows) {
+    const result = gradeResponse(row);
     if (result === true) correct++;
     if (result === false) incorrect++;
   }

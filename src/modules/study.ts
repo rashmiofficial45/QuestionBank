@@ -3,7 +3,10 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/database";
 import { attempts, bookmarks, practiceSessions, questions, questionVersions } from "@/database/schema";
-import type { Content } from "@/lib/content";
+import { presentations, type Content } from "@/lib/content";
+import { isWritten } from "@/lib/written-answer";
+import { isRanked } from "@/lib/ranked-answer";
+import { legacyStatementPattern } from "@/lib/statement-content";
 
 const profileName = "question_bank_profile";
 export async function getProfile(create = false) {
@@ -19,6 +22,8 @@ export async function getProfile(create = false) {
 export function displayText(content: Content) {
   return content.blocks.map((block) => {
     if (block.type === "paragraph") return block.text;
+    if (block.type === "statements") return block.items.map(({ label, text }) => `${label} ${text}`).join("\n");
+    if (block.type === "assertion_reason") return [block.assertion, block.reason].map(({ label, text }) => `${label} ${text}`).join("\n");
     if (block.type === "table") return [block.headers, ...block.rows].map((row) => row.join(" ")).join("\n");
     return "";
   }).filter(Boolean).join("\n");
@@ -41,7 +46,14 @@ export async function browse(query = "", subject = "", page = 1, source = "", fo
     subject ? eq(questions.subject, subject) : undefined,
     source ? eq(questions.source, source) : undefined,
     format === "table" ? sql`${questions.content}->'blocks' @> '[{"type":"table"}]'::jsonb` : undefined,
-    format === "multiple_choice" || format === "true_false" ? sql`${questions.content}->>'interaction' = ${format}` : undefined,
+    format === "assertion_reason" ? sql`${questions.content}->'blocks' @> '[{"type":"assertion_reason"}]'::jsonb` : undefined,
+    format === "statements" ? sql`exists (
+      select 1 from jsonb_array_elements(${questions.content}->'blocks') as item(block)
+      where item.block->>'type' = 'statements'
+        or (item.block->>'type' = 'paragraph' and item.block->>'text' ~* ${legacyStatementPattern})
+    )` : undefined,
+    format === "multiple_choice" || format === "true_false" || isWritten(format) || isRanked(format) ? sql`${questions.content}->>'interaction' = ${format}` : undefined,
+    Object.hasOwn(presentations, format) ? sql`${questions.content}->>'presentation' = ${format}` : undefined,
     query ? or(sql`to_tsvector('english', ${questions.searchText}) @@ websearch_to_tsquery('english', ${query})`, ilike(questions.searchText, `%${escaped}%`)) : undefined,
   );
   const count = await db.$count(questions, predicate);

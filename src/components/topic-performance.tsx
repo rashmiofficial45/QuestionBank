@@ -10,11 +10,11 @@ export type TopicPerformanceRow = {
   unanswered?: number;
 };
 
-export function TopicPerformance({ rows }: { rows: TopicPerformanceRow[] }) {
+export function TopicPerformance({ rows, title = "Performance by topic" }: { rows: TopicPerformanceRow[]; title?: string }) {
   const includeUnanswered = rows.some((row) => row.unanswered !== undefined);
   return <Card className="shadow-none">
-    <CardHeader><CardTitle><h2>Performance by topic</h2></CardTitle></CardHeader>
-    <CardContent>{rows.length ? <Table aria-label="Performance by topic">
+    <CardHeader><CardTitle><h2>{title}</h2></CardTitle></CardHeader>
+    <CardContent>{rows.length ? <Table aria-label={title}>
       <TableHeader><TableRow><TableHead>Subject</TableHead><TableHead>Topic</TableHead><TableHead>Answered</TableHead><TableHead>Correct</TableHead><TableHead>Incorrect</TableHead>{includeUnanswered && <TableHead>Unanswered</TableHead>}<TableHead>Accuracy</TableHead></TableRow></TableHeader>
       <TableBody>{rows.map(({ subject, topic, correct, incorrect, unanswered }) => {
         const accuracy = testAccuracy(correct, incorrect);

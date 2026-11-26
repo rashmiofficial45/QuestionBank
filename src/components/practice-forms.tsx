@@ -9,6 +9,10 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import type { Content } from "@/lib/content";
 import type { TestResponse } from "@/database/schema";
 import { choiceIds, type ChoiceSelection } from "@/lib/choice-selection";
+import { isWritten } from "@/lib/written-answer";
+import { Textarea } from "@/components/ui/textarea";
+import { isRanked } from "@/lib/ranked-answer";
+import { RankedFields, rankedLabels } from "@/components/ranked-fields";
 
 export function PracticeSetup({ papers }: { papers: { name: string }[] }) {
   const [state, action, pending] = useActionState(startPractice, {});
@@ -50,19 +54,30 @@ export function TestTimer({ id, seconds, unanswered }: { id: string; seconds: nu
   </div>;
 }
 
-export function TestOptions({ id, questionId, options, interaction, response, answer, ended }: {
+export function TestOptions({ id, questionId, options, interaction, prompts, response, answer, ended }: {
   id: string; questionId: string; options: Content["options"]; interaction: Content["interaction"];
-  response: TestResponse; answer?: ChoiceSelection | null; ended: boolean;
+  response: TestResponse; answer?: ChoiceSelection | null; ended: boolean; prompts?: string[];
 }) {
   const [state, action, pending] = useActionState(saveResponse.bind(null, id, questionId), {});
   const multiple = interaction === "multiple_choice";
   const prompt = interaction === "true_false" ? "Select True or False" : multiple ? "Select all correct answers" : "Select one answer";
   const [selectedIds, select] = useOptimistic(choiceIds(response.options ?? response.option), (_current, next: string[]) => next);
   const answerIds = choiceIds(answer);
-  return <form action={action} className="test-options">
+  const written = isWritten(interaction);
+  const ranked = isRanked(interaction);
+  return <form action={action} noValidate={ranked} className="test-options">
     <fieldset disabled={ended || (pending && !multiple)} className="answer-form">
-      <legend>{ended ? "Answer review" : prompt}</legend>
-      {options.map((option) => {
+      <legend>{ended ? "Answer review" : written ? "Enter your response" : prompt}</legend>
+      {written ? <>
+        <Textarea key={response.option} aria-label="Your response" name="option" defaultValue={response.option ?? ""}
+          rows={3} inputMode={interaction === "numeric" ? "decimal" : undefined} maxLength={8000} />
+        {ended && typeof answer === "string" && <p className="mt-2 whitespace-pre-wrap text-sm"><strong>Expected answer</strong> {answer}</p>}
+        {!ended && <Button className="mt-2" type="submit" name="selection" value="written">Save response</Button>}
+      </> : ranked ? <>
+        <RankedFields key={response.options?.join(",")} options={options} prompts={prompts} selected={selectedIds} />
+        {ended ? <p className="mt-3 whitespace-pre-wrap text-sm">{rankedLabels(options, answerIds, prompts)}</p>
+          : <Button className="mt-2" type="submit">Save response</Button>}
+      </> : options.map((option) => {
         const selected = selectedIds.includes(option.id);
         const correct = ended && answerIds.includes(option.id);
         const wrong = ended && selected && !correct;

@@ -12,6 +12,9 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { setBookmark } from "@/app/(student)/actions";
 import { bookmarkIds, browse, PAGE_SIZE, paperSources, subjects } from "@/modules/study";
+import { presentations } from "@/lib/content";
+import { writtenFormats } from "@/lib/written-answer";
+import { rankedFormats } from "@/lib/ranked-answer";
 
 type SearchParams = Promise<{ q?: string; subject?: string; source?: string; format?: string; page?: string }>;
 
@@ -21,7 +24,8 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
   const query = value(params.q, 120);
   const subject = value(params.subject, 60);
   const source = value(params.source, 120);
-  const format = params.format === "table" || params.format === "multiple_choice" || params.format === "true_false" ? params.format : "";
+  const formats = ["table", "statements", "assertion_reason", "true_false", "multiple_choice", ...Object.keys(presentations), ...Object.keys(writtenFormats), ...Object.keys(rankedFormats)];
+  const format = params.format && formats.includes(params.format) ? params.format : "";
   const requestedPage = /^\d{1,9}$/.test(value(params.page, 10)) ? Math.max(1, Number(params.page)) : 1;
   const base = "/questions";
   const [{ items, count, page }, groups, papers, saved] = await Promise.all([browse(query, subject, requestedPage, source, format), subjects(), paperSources(), bookmarkIds()]);
@@ -45,8 +49,11 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
       <NativeSelect aria-label="Question format" name="format" defaultValue={format}>
         <NativeSelectOption value="">All formats</NativeSelectOption>
         <NativeSelectOption value="table">Table questions</NativeSelectOption>
+        <NativeSelectOption value="statements">Statement-based questions</NativeSelectOption>
+        <NativeSelectOption value="assertion_reason">Assertion–Reason questions</NativeSelectOption>
         <NativeSelectOption value="true_false">True/False</NativeSelectOption>
         <NativeSelectOption value="multiple_choice">Multiple correct answers</NativeSelectOption>
+        {Object.entries({ ...presentations, ...writtenFormats, ...rankedFormats }).map(([key, label]) => <NativeSelectOption key={key} value={key}>{label}</NativeSelectOption>)}
       </NativeSelect>
       <Button type="submit" variant="outline">Search</Button>
       {(query || subject || source || format) && <Button asChild variant="ghost"><Link href={base}>Clear filters</Link></Button>}
@@ -66,7 +73,7 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
           <CardContent>
             <div className="study-badges"><Badge variant="secondary"><SearchHighlight text={item.subject} terms={terms} /></Badge>{item.topic !== "General" && <Badge variant="outline"><SearchHighlight text={item.topic} terms={terms} /></Badge>}{item.content.blocks.some((block) => block.type === "table") && <Badge variant="outline">Table</Badge>}{item.tags.map((tag) => <Badge key={tag} variant="outline"><SearchHighlight text={tag} terms={terms} /></Badge>)}</div>
             <QuestionContent blocks={item.content.blocks} importId={item.importId} terms={terms} />
-            <AnswerForm terms={terms} id={item.id} revision={item.revision} options={item.content.options} interaction={item.content.interaction} inline />
+            <AnswerForm terms={terms} id={item.id} revision={item.revision} options={item.content.options} interaction={item.content.interaction} prompts={item.content.interaction === "pair_matching" ? item.content.prompts : undefined} inline />
           </CardContent>
         </Card></article>;
       })}

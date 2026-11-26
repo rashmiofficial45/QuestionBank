@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableHeader, TableHead, TableRow, TableCell, TableBody } from "@/components/ui/table";
-import type { Content } from "@/lib/content";
+import { presentations, textStyles, type Content } from "@/lib/content";
 import { choiceIds } from "@/lib/choice-selection";
+import { isWritten, writtenFormats } from "@/lib/written-answer";
+import { isRanked, rankedFormats } from "@/lib/ranked-answer";
 
 export function UploadForm() {
   const [state, action, pending] = useActionState(uploadPapers, {});
@@ -39,6 +41,12 @@ export function EditForm({ content, importId, id, issues, generation, classifica
   })));
   const [taxonomy, setTaxonomy] = useState({ ...classification, tags: classification.tags.join(", ") });
   const [interaction, setInteraction] = useState(content.interaction);
+  const [referenceAnswer, setReferenceAnswer] = useState(isWritten(content.interaction) && typeof content.answer === "string" ? content.answer : "");
+  const written = isWritten(interaction);
+  const ranked = isRanked(interaction);
+  const [sequence, setSequence] = useState(() => isRanked(content.interaction)
+    ? choiceIds(content.answer).map((id) => content.options.find((option) => option.id === id)?.label ?? "").join(", ") : "");
+  const [prompts, setPrompts] = useState(content.interaction === "pair_matching" ? content.prompts.join("\n") : "");
   const [answers, setAnswers] = useState(() => choiceIds(content.answer));
   const [explanation, setExplanation] = useState(content.explanation);
   const [verified, setVerified] = useState(false);
@@ -52,13 +60,46 @@ export function EditForm({ content, importId, id, issues, generation, classifica
 
   return <form className="upload-form" action={action}>
     {blocks.map((block, index) => {
-      if (block.type === "paragraph") return <label className="field" key={block.id}>
-        {index ? "Text after table" : "Question text"}
-        <Textarea name={`stem-${block.id}`} value={block.text} onChange={(event) => {
+      if (block.type === "paragraph") return <div className="grid gap-2" key={block.id}>
+        <label className="field">{index === 0 ? "Question text" : "Additional question text"}
+          <Textarea name={`stem-${block.id}`} value={block.text} onChange={(event) => {
           const text = event.target.value;
           setBlocks((current) => current.map((item) => item.id === block.id ? { ...block, text } : item));
-        }} rows={index ? 3 : 5} required readOnly={lockSourceText} />
-      </label>;
+          }} rows={index ? 3 : 5} required readOnly={lockSourceText} />
+        </label>
+        {!lockSourceText && <label className="field">Text block style
+          <select name={`style-${block.id}`} defaultValue={block.style && block.style !== "paragraph" ? block.style : ""}>
+            <option value="">Paragraph</option>
+            {textStyles.slice(1).map((value) => <option key={value} value={value}>{value.charAt(0).toUpperCase() + value.slice(1)}</option>)}
+          </select>
+        </label>}
+      </div>;
+      if (block.type === "assertion_reason") return <fieldset key={block.id} className="grid gap-3 rounded-md border p-3">
+        <legend className="px-1 text-sm font-medium">Assertion and reason</legend>
+        {(["assertion", "reason"] as const).map((part) => <label key={part} className="field">
+          {block[part].label}
+          <Textarea name={`${part}-${block.id}`} aria-label={block[part].label} value={block[part].text}
+            rows={2} required readOnly={lockSourceText} onChange={(event) => {
+              const text = event.target.value;
+              setBlocks((current) => current.map((entry) => entry.type === "assertion_reason" && entry.id === block.id
+                ? { ...entry, [part]: { ...entry[part], text } }
+                : entry));
+            }} />
+        </label>)}
+      </fieldset>;
+      if (block.type === "statements") return <fieldset className="grid gap-3 rounded-md border p-3" key={block.id}>
+        <legend className="px-1 text-sm font-medium">Statements</legend>
+        {block.items.map((item, position) => <label className="field" key={position}>
+          {item.label}
+          <Textarea name={`statement-${block.id}-${position}`} aria-label={item.label} value={item.text} rows={2} required readOnly={lockSourceText}
+            onChange={(event) => {
+              const text = event.target.value;
+              setBlocks((current) => current.map((entry) => entry.type === "statements" && entry.id === block.id
+                ? { ...entry, items: entry.items.map((statement, index) => index === position ? { ...statement, text } : statement) }
+                : entry));
+            }} />
+        </label>)}
+      </fieldset>;
       if (block.type !== "table") return null;
       const cellInput = (value: string, row: "header" | number, col: number) => <Input
         aria-label={row === "header" ? `Table header ${col + 1}` : `Table row ${row + 1}, column ${col + 1}`}
@@ -76,16 +117,24 @@ export function EditForm({ content, importId, id, issues, generation, classifica
         <TableBody>{block.rows.map((cells, row) => <TableRow key={row}>{cells.map((value, col) => <TableCell key={col}>{cellInput(value, row, col)}</TableCell>)}</TableRow>)}</TableBody>
       </Table></div>;
     })}
+    <label className="field">Question layout
+      <select name="presentation" aria-label="Question layout" defaultValue={content.presentation ?? ""}>
+        <option value="">Standard</option>
+        {Object.entries(presentations).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+    </label>
     <label className="field">Answer interaction
       <select name="interaction" aria-label="Answer interaction" value={interaction} onChange={(event) => {
         const value = event.target.value;
-        const next = value === "multiple_choice" || value === "true_false" ? value : "single_choice";
+        const next = isWritten(value) || isRanked(value) || value === "multiple_choice" || value === "true_false" ? value : "single_choice";
         setInteraction(next);
         if (next !== "multiple_choice") setAnswers((current) => current.slice(0, 1));
-      }}><option value="single_choice">Single choice</option><option value="true_false">True/False</option><option value="multiple_choice">Multiple correct answers</option></select>
+      }}><option value="single_choice">Single choice</option><option value="true_false">True/False</option><option value="multiple_choice">Multiple correct answers</option>
+        {Object.entries({ ...writtenFormats, ...rankedFormats }).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
     </label>
     <input type="hidden" name="options" value={JSON.stringify(options)} />
-    <section className="grid gap-3">
+    {!written && <section className="grid gap-3">
       <h3 className="font-semibold">Answer options</h3>
       {options.map(({ id, label, text }, index) => <div className="editor-option" key={id}>
         <label className="field">Label <Input aria-label={`Label for option ${index + 1}`} value={label} maxLength={12} required onChange={(event) => setOptions((current) => current.map((item) => item.id === id ? { ...item, label: event.target.value } : item))} /></label>
@@ -103,8 +152,18 @@ export function EditForm({ content, importId, id, issues, generation, classifica
         const label = Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ").find((letter) => !options.some((option) => option.label.toUpperCase() === letter)) ?? "";
         setOptions([...options, { id: crypto.randomUUID(), label, text: "" }]);
       }}><Plus />Add option</Button>
-    </section>
-    {interaction === "multiple_choice"
+    </section>}
+    {ranked ? <div className="grid gap-3">
+      {interaction === "pair_matching" && <label className="field">Matching prompts (one per line)
+        <Textarea name="prompts" aria-label="Matching prompts" value={prompts} onChange={(event) => setPrompts(event.target.value)} rows={4} />
+      </label>}
+      <label className="field">Correct sequence of option labels
+        <Input name="sequence" aria-label="Correct sequence of option labels" placeholder="B, A, C" value={sequence} onChange={(event) => setSequence(event.target.value)} />
+      </label>
+    </div> : written ? <label className="field">Reference answer
+      <Textarea name="written-answer" aria-label="Reference answer" value={referenceAnswer} rows={3} maxLength={8000}
+        onChange={(event) => setReferenceAnswer(event.target.value)} />
+    </label> : interaction === "multiple_choice"
       ? <fieldset className="grid gap-2"><legend className="mb-2 font-medium">Correct answers</legend>
           {options.map((option) => <label className="flex items-center gap-2" key={option.id}>
             <input type="checkbox" name="answer" value={option.id} checked={answers.includes(option.id)}

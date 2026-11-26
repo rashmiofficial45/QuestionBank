@@ -12,6 +12,16 @@ from document_layout import analyze_page, center, read_scanned_columns
 QUESTION = re.compile(r"^(\d{1,3})[.)](?:\s+|$)(.*)$")
 OCR_QUESTION = re.compile(r"^(\d{1,3})[,.:)](?:\s+|$)(.*)$")
 OPTION = re.compile(r"^\(([A-Za-z])\)\s*(.*)$")
+STATEMENT = re.compile(
+    r"^(?P<label>(?P<prefix>Statement[ \t]+)?(?:\((?P<wrapped>\d{1,2}|[IVX]+)\)|"
+    r"(?P<bare>\d{1,2}|[IVX]+)[.):]))[ \t]+(?P<text>\S.*)$",
+    re.I,
+)
+ROMAN_ORDINALS = dict(zip(("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"), range(1, 11)))
+ASSERTION_REASON = re.compile(
+    r"^(?P<label>(?P<kind>Assertion|Reason)(?:[ \t]*\([AR]\))?[ \t]*[:–-])[ \t]*(?P<text>.*)$",
+    re.I,
+)
 KEY_START = re.compile(
     r"(?<![\w.])(\d{1,3})(?:\s*[.):–-]\s*|\s+)"
     r"(?=\(?\s*(?:[A-Za-z]|true|false)\b(?:[\s),;&+]|/(?=[A-Za-z(])|$))",
@@ -96,6 +106,73 @@ def read_key(layouts):
     return answers
 
 
+def statement_marker(line):
+    marker = STATEMENT.match(line)
+    if not marker:
+        return None
+    ordinal = marker["wrapped"] or marker["bare"]
+    numeric = ordinal.isdecimal()
+    number = int(ordinal) if numeric else ROMAN_ORDINALS.get(ordinal.upper(), 0)
+    if number > 0:
+        return number, (bool(marker["prefix"]), numeric), dict(label=marker["label"], text=marker["text"])
+    return None
+
+
+def structure_statements(block):
+    if block["type"] != "paragraph":
+        return [block]
+    lines = block["text"].split("\n")
+    markers = [statement_marker(line) for line in lines]
+    start = 0
+    index = 0
+    parts = []
+
+    def add_paragraph(end):
+        text = "\n".join(lines[start:end]).strip()
+        if text:
+            parts.append(dict(id=f"{block['id']}-part-{len(parts) + 1}", type="paragraph", text=text))
+
+    while index + 1 < len(lines):
+        first, second = markers[index:index + 2]
+        if not first or not second or first[0] != 1 or second[:2] != (2, first[1]):
+            index += 1
+            continue
+        add_paragraph(index)
+        items = [first[2], second[2]]
+        index += 2
+        while index < len(lines) and (marker := markers[index]) and marker[:2] == (len(items) + 1, first[1]):
+            items.append(marker[2])
+            index += 1
+        parts.append(dict(id=f"{block['id']}-part-{len(parts) + 1}", type="statements", items=items))
+        start = index
+    if not parts:
+        return [block]
+    add_paragraph(len(lines))
+    return parts
+
+
+def structure_assertion_reason(block):
+    if block["type"] != "paragraph":
+        return [block]
+    lines = block["text"].split("\n")
+    for index, (first, second) in enumerate(zip(lines, lines[1:])):
+        assertion = ASSERTION_REASON.match(first)
+        reason = ASSERTION_REASON.match(second)
+        if (not assertion or not reason or assertion["kind"].lower() != "assertion"
+                or reason["kind"].lower() != "reason" or not assertion["text"] or not reason["text"]):
+            continue
+
+        parts = [dict(id=f"{block['id']}-pair", type="assertion_reason",
+                      assertion=dict(label=assertion["label"], text=assertion["text"]),
+                      reason=dict(label=reason["label"], text=reason["text"]))]
+        if before := "\n".join(lines[:index]).strip():
+            parts.insert(0, dict(id=f"{block['id']}-before-pair", type="paragraph", text=before))
+        if after := "\n".join(lines[index + 2:]).strip():
+            parts.append(dict(id=f"{block['id']}-after-pair", type="paragraph", text=after))
+        return parts
+    return [block]
+
+
 def as_text(lines):
     if not lines:
         return ""
@@ -104,16 +181,20 @@ def as_text(lines):
         paragraph = (
             line.page != previous.page or line.column != previous.column
             or (line.box.y0 - previous.box.y0 > 25)
-            or bool(re.match(r"^(?:\d+[.)]|Statement \d|Which |How many )", line.text))
+            or statement_marker(line.text) is not None
+            or ASSERTION_REASON.match(line.text) is not None
+            or bool(re.match(r"^(?:\d+[.)]|Statement \d|Which |How many |Select the |Choose the |In the light of )", line.text))
         )
         chunks.append(("\n" if paragraph else " ") + line.text)
     return "".join(chunks).strip()
 
 
-def crop_stem(doc, output, number, stem):
+def crop_stem(doc, output, number, stem, images=None):
     regions = defaultdict(list)
     for line in stem:
         regions[(line.page, line.column)].append(line.box)
+    for region, boxes in (images or {}).items():
+        regions[region].extend(boxes)
     crops = []
     for i, ((page_number, _), boxes) in enumerate(regions.items()):
         rect = pdf.Rect(boxes[0])
@@ -128,6 +209,23 @@ def crop_stem(doc, output, number, stem):
         crops.append(dict(id=f"source-{i + 1}", type="source_crop", page=page_number, file=file,
                           alt=f"Original prompt layout for question {number}, PDF page {page_number}"))
     return crops
+
+
+def embedded_prompt_images(stem, options, page_images, polity):
+    regions = defaultdict(list)
+    for line in stem:
+        regions[(line.page, line.column)].append(line.box)
+    first_option = options[0][1][0] if options else None
+    images = {}
+    for (page, column), boxes in regions.items():
+        top = min(box.y0 for box in boxes)
+        bottom = max(box.y1 for box in boxes)
+        if first_option and (first_option.page, first_option.column) == (page, column):
+            bottom = first_option.box.y0
+        for image in page_images.get(page, []):
+            if top <= image.y0 and image.y1 <= bottom and (not polity or int(center(image).x >= 300) == column):
+                images.setdefault((page, column), []).append(image)
+    return images
 
 
 def inside_table(line, box):
@@ -181,6 +279,14 @@ def extract(paper: Path, key: Path, output: Path | None = None, stage=lambda _: 
             and bool(re.search(r"polity\s*[-–]\s*pt\s*[-–]\s*01\b", masthead, re.I))
         )
         answers = read_key(key_layouts)
+        page_images = {}
+        for page, layout in zip(doc, layouts):
+            if layout.scanned or page.rotation:
+                continue
+            boxes = [pdf.Rect(item["bbox"]) for item in page.get_image_info()]
+            page_images[page.number + 1] = [
+                box for box in boxes if box.width >= 32 and box.height >= 32 and box.get_area() < page.rect.get_area() * 0.7
+            ]
         segments = []
         current = None
         lines = list(read_lines(doc, layouts, polity, stage))
@@ -260,14 +366,17 @@ def extract(paper: Path, key: Path, output: Path | None = None, stage=lambda _: 
             if not as_text(stem):
                 issues.append("Question text is missing.")
             blocks = build_blocks(stem, layouts)
+            blocks = [part for block in blocks for part in structure_assertion_reason(block)]
+            blocks = [part for block in blocks for part in structure_statements(block)]
             structured = any(block["type"] == "table" for block in blocks)
+            images = embedded_prompt_images(stem, options, page_images, polity)
             unresolved = any(inside_table(line, box) for line in stem
                              for box in layouts[line.page - 1].unresolved_tables or [])
             if unresolved or (polity and number in POLITY_TABLES and not structured):
                 issues.append("A table could not be structured safely. Compare the original layout before publishing.")
-            if stem and (structured or unresolved or (polity and number in POLITY_TABLES) or any(layout.scanned for layout in page_layouts)):
-                crops = crop_stem(doc, output, number, stem)
-                if not unresolved and (structured or any(layout.scanned for layout in page_layouts)):
+            if stem and (images or structured or unresolved or (polity and number in POLITY_TABLES) or any(layout.scanned for layout in page_layouts)):
+                crops = crop_stem(doc, output, number, stem, images)
+                if not images and not unresolved and (structured or any(layout.scanned for layout in page_layouts)):
                     for crop in crops:
                         crop["reference"] = True
                 blocks.extend(crops)

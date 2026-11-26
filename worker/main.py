@@ -1,8 +1,9 @@
 import json
 import logging
 import os
+import signal
+from threading import Event
 from pathlib import Path
-import time
 
 from psycopg import connect
 from psycopg.rows import dict_row
@@ -83,18 +84,20 @@ def process(conn, job):
 
 
 def main():
-    while True:
+    stop = Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    while not stop.is_set():
         try:
             with connect(DATABASE, autocommit=True, row_factory=dict_row) as conn:
-                while True:
+                while not stop.is_set():
                     job = claim(conn)
                     if job:
                         process(conn, job)
                     else:
-                        time.sleep(2)
+                        stop.wait(2)
         except Exception as error:
             log("worker.connection_error", reason=str(error))
-            time.sleep(4)
+            stop.wait(4)
 
 
 if __name__ == "__main__":

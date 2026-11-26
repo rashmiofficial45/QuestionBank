@@ -1,6 +1,7 @@
 services:
   database:
     image: postgres:18
+    restart: unless-stopped
     environment:
       POSTGRES_DB: question_bank
       POSTGRES_USER: question_bank
@@ -22,6 +23,7 @@ services:
         condition: service_healthy
   web:
     build: .
+    restart: unless-stopped
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:?Set COMPOSE_DATABASE_URL in .env}
       ENABLE_PRIVATE_ADMIN: "1"
@@ -30,11 +32,19 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - source_files:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
     depends_on:
       migrate:
         condition: service_completed_successfully
   worker:
     build: ./worker
+    restart: unless-stopped
+    stop_grace_period: 3m
+    mem_limit: 1g
     environment:
       DATABASE_URL: ${COMPOSE_DATABASE_URL:?Set COMPOSE_DATABASE_URL in .env}
       STORAGE_DIR: /data

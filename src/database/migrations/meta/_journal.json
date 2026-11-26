@@ -36,6 +36,20 @@
       "when": 1795648334255,
       "tag": "0004_overconfident_texas_twister",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795650990809,
+      "tag": "0005_tough_wallow",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795651155694,
+      "tag": "0006_freezing_leech",
+      "breakpoints": true
     }
   ]
 }

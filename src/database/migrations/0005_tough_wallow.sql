@@ -1,0 +1,1 @@
+ALTER TABLE "study_attempts" ADD COLUMN "response_text" text;

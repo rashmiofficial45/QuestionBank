@@ -9,6 +9,8 @@ import { z } from "zod";
 import { db } from "@/database";
 import { drafts, editorialEvents, imports, questions, questionVersions } from "@/database/schema";
 import { optionSchema, publicationIssues, questionSchema } from "@/lib/content";
+import { isWritten } from "@/lib/written-answer";
+import { isRanked } from "@/lib/ranked-answer";
 import { requireAdmin, storageRoot } from "@/modules/imports";
 import { displayText } from "@/modules/study";
 
@@ -81,11 +83,27 @@ export async function saveDraft(importId: string, id: string, generation: number
     if (!draft) return { error: "Draft unavailable." };
     if (draft.generation !== generation) return { error: "This draft changed in another edit. Reload before saving." };
     const interaction = form.get("interaction") ?? draft.content.interaction;
-    const answers = form.getAll("answer");
+    const written = typeof interaction === "string" && isWritten(interaction);
+    const ranked = typeof interaction === "string" && isRanked(interaction);
+    const answers = form.getAll(written ? "written-answer" : "answer");
+    const sequence = ranked ? String(form.get("sequence") ?? "").split(",").map((label) =>
+      optionInputs.data.find((option) => option.label.toLowerCase() === label.trim().toLowerCase())?.id ?? ""
+    ) : [];
     const content = questionSchema.safeParse({
       ...draft.content,
       blocks: draft.content.blocks.map((block) => {
-        if (block.type === "paragraph") return { ...block, text: form.get(`stem-${block.id}`) };
+        if (block.type === "paragraph") return {
+          ...block, text: form.get(`stem-${block.id}`),
+          style: (form.get(`style-${block.id}`) ?? block.style) || undefined,
+        };
+        if (block.type === "assertion_reason") return {
+          ...block,
+          assertion: { ...block.assertion, text: form.get(`assertion-${block.id}`) },
+          reason: { ...block.reason, text: form.get(`reason-${block.id}`) },
+        };
+        if (block.type === "statements") return { ...block, items: block.items.map((item, position) => ({
+          ...item, text: form.get(`statement-${block.id}-${position}`),
+        })) };
         if (block.type !== "table") return block;
         return { ...block,
           headers: block.headers.map((_, col) => form.get(`cell-${block.id}-header-${col}`)),
@@ -94,7 +112,9 @@ export async function saveDraft(importId: string, id: string, generation: number
       }),
       options: optionInputs.data,
       interaction,
-      answer: interaction === "multiple_choice" ? answers : answers[0] || null,
+      presentation: (form.get("presentation") ?? draft.content.presentation) || undefined,
+      answer: ranked ? sequence : interaction === "multiple_choice" ? answers : answers[0] || null,
+      prompts: interaction === "pair_matching" ? String(form.get("prompts") ?? "").split("\n").map((line) => line.trim()).filter(Boolean) : undefined,
       explanation: form.get("explanation"),
     });
     if (!content.success) return { error: "Provide question text and a value for every option." };

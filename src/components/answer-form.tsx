@@ -9,12 +9,62 @@ import { Button } from "@/components/ui/button";
 import { submitAnswer } from "@/app/(student)/actions";
 import type { Content } from "@/lib/content";
 import { choiceIds } from "@/lib/choice-selection";
+import { isWritten, type WrittenInteraction } from "@/lib/written-answer";
+import { Textarea } from "@/components/ui/textarea";
+import { isRanked } from "@/lib/ranked-answer";
+import { RankedFields, rankedLabels } from "@/components/ranked-fields";
 
-type Props = { terms?: string[]; id: string; revision: number; options: Content["options"]; interaction: Content["interaction"]; next?: string; inline?: boolean; mode?: "practice" | "bank" };
+type Props = { terms?: string[]; id: string; revision: number; options: Content["options"]; interaction: Content["interaction"]; prompts?: string[]; next?: string; inline?: boolean; mode?: "practice" | "bank" };
 
 export function AnswerForm(props: Props) {
   const [round, setRound] = useState(0);
+  if (isWritten(props.interaction)) return <WrittenRound key={round} {...props} interaction={props.interaction} retry={() => setRound(round + 1)} />;
+  if (isRanked(props.interaction)) return <RankedRound key={round} {...props} retry={() => setRound(round + 1)} />;
   return <AnswerRound key={round} {...props} retry={() => setRound(round + 1)} />;
+}
+
+function RankedRound({ id, revision, mode = "bank", options, prompts, retry, next }: Props & { retry: () => void }) {
+  const [result, action, pending] = useActionState(submitAnswer.bind(null, id, revision, mode), {});
+  return <form action={action} className="answer-form grid gap-3">
+    <fieldset disabled={pending || Boolean(result.answer)}>
+      <legend>{prompts ? "Match each prompt" : "Place items in order"}</legend>
+      <RankedFields key={result.answer ? "review" : "answer"} options={options} prompts={prompts} selected={choiceIds(result.selected)} />
+    </fieldset>
+    {result.error && <p className="form-error" role="alert">{result.error}</p>}
+    {result.answer ? <>
+      <Alert className={`answer-result ${result.correct ? "answer-correct" : "answer-incorrect"}`}>
+        <AlertTitle>{result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
+        <AlertDescription className="whitespace-pre-wrap">{rankedLabels(options, choiceIds(result.answer), prompts)}</AlertDescription>
+      </Alert>
+      {result.explanation && <details><summary>Explanation</summary><p>{result.explanation}</p></details>}
+      <div className="form-actions"><Button type="button" variant="outline" onClick={retry}>Try again</Button>
+        {next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</div>
+    </> : <Button type="submit" disabled={pending} className="justify-self-start">Check answer</Button>}
+  </form>;
+}
+
+function WrittenRound({ id, revision, interaction, mode = "bank", retry, next }: Props & { interaction: WrittenInteraction; retry: () => void }) {
+  const [result, action, pending] = useActionState(submitAnswer.bind(null, id, revision, mode), {});
+  const descriptive = interaction === "descriptive";
+  return <form action={action} className="answer-form grid gap-3">
+    <label className="field">Your response
+      <Textarea name="option" aria-label="Your response" key={result.answer ? "review" : "response"}
+        defaultValue={typeof result.selected === "string" ? result.selected : ""}
+        inputMode={interaction === "numeric" ? "decimal" : undefined} rows={descriptive ? 5 : 2} maxLength={8000}
+        readOnly={Boolean(result.answer)} required />
+    </label>
+    {result.error && <p className="form-error" role="alert">{result.error}</p>}
+    {result.answer ? <>
+      <Alert className={descriptive ? undefined : `answer-result ${result.correct ? "answer-correct" : "answer-incorrect"}`}>
+        <AlertTitle>{descriptive ? "Reference answer" : result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
+        <AlertDescription className="whitespace-pre-wrap">{result.answer}</AlertDescription>
+      </Alert>
+      {descriptive && <p className="text-sm text-muted-foreground">Compare your response with the reference answer.</p>}
+      {result.explanation && <details className="source-text"><summary>Explanation</summary><p>{result.explanation}</p></details>}
+      <div className="form-actions"><Button type="button" variant="outline" onClick={retry}>Try again</Button>
+        {next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</div>
+    </> : <Button type="submit" disabled={pending} className="justify-self-start">{descriptive ? "Reveal reference answer" : "Check answer"}</Button>}
+  </form>;
 }
 
 function AnswerRound({ id, revision, options, interaction, next, terms, inline = false, mode = "bank", retry }: Props & { retry: () => void }) {

@@ -17,6 +17,10 @@ def search_text(blocks):
     for block in blocks:
         if block["type"] == "paragraph":
             parts.append(block["text"])
+        elif block["type"] == "statements":
+            parts.extend(f"{item['label']} {item['text']}" for item in block["items"])
+        elif block["type"] == "assertion_reason":
+            parts.extend(f"{block[part]['label']} {block[part]['text']}" for part in ("assertion", "reason"))
         elif block["type"] == "table":
             parts.extend(" ".join(row) for row in [block["headers"], *block["rows"]])
     return parts

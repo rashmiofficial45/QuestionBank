@@ -61,6 +61,10 @@ The PDF importer detects explicit answer sets such as `1. A, C` or `1. (A) and (
 
 The importer recognizes True/False questions when the paper has explicit True and False options. The key can use the original option letters or the words True and False. Editors can assign **True/False** manually in the draft editor. Publication requires one True option, one False option, and a single matching answer.
 
+Statement-based questions keep consecutive numbered or Roman-numeral statements as a list, with the original labels and surrounding prompt text. Editors can edit each extracted statement. The question bank's **Statement-based questions** filter also finds matching lists in older imports. The statement layout preserves the source's answer interaction and key.
+
+Assertion–Reason questions imported with explicit Assertion and Reason labels on separate lines display the two parts separately. Editors can update each part and learners can find the format in the question bank. Grading follows the answer key and options from the source. Prompts without a recognizable pair retain their original text.
+
 Submission opens Test ended with earned and total marks, accuracy, time taken, and a topic breakdown. Review answers opens the original questions and a table of selections, correct answers, and outcomes. Exit test returns to the practice setup and the most recent 20 scores. Deleting a review removes that test from the score table and keeps its individual attempts in Progress.
 
 The default test uses 60 minutes and two marks per correct answer, with one-third of the marks deducted for an incorrect answer. The setup form can change those settings. Progress distinguishes test attempts from question-bank activity and shows performance by subject and topic. Revision lists questions whose latest attempt was incorrect. A correct retry clears the question from the queue.
@@ -74,3 +78,9 @@ Edit a published question to prepare a draft revision. Publishing creates an imm
 Run editorial browser tests against a separate database and worker. Set `EDITORIAL_TEST_DATABASE=1`, `PREVIEW_URL` to that server, and the fixture directory variables above. Run `pnpm test:e2e tests/e2e/editorial.spec.ts`.
 
 PostgreSQL holds the import queue, draft and original JSON content, published snapshots, attempts, and bookmarks. Full-text and trigram indexes support question search. Source PDFs and crop images use local persistent storage outside the checked-in workspace content. Review the [task checklist](tasks/todo.md) for subsequent milestones.
+
+## Release verification
+
+See [the local release report](tasks/release-verification.md) for measured search and extraction results, the backup and restore drill, and the remaining deployment checks. The database-backed readiness endpoint is `/api/health`.
+
+The editor supports numerical, fill-in-the-blank, and short-answer questions with deterministic grading. Descriptive responses reveal a reference answer after the learner submits their draft and are excluded from scored tests. For matching and ordering, configure the expected sequence using the original option labels. Pair matching also needs one prompt per line. Set Question layout to classify coded matching, chronological, and comprehension questions independently from how they are answered. The text block style supports passages, quotations, headings, code, and KaTeX equations. Embedded prompt images in supported native PDFs are retained in original source crops.

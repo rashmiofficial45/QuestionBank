@@ -26,6 +26,54 @@ def test_unrecognized_layout_is_staged_with_review_flags(tmp_path):
     assert any("verified profile" in issue for issue in issues)
 
 
+def test_assertion_reason_keeps_source_labels_options_and_key(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, [
+        "1. Consider the following:",
+        "Assertion (A): A leap year has 366 days.",
+        "Reason (R): February has one additional day in a leap year.",
+        "Select the correct answer.",
+        "(a) Both are true and R explains A.", "(b) Both are true but R does not explain A.",
+    ])
+    make_pdf(key, ["1. (a)"])
+    [(_, _, content, _)] = extract(paper, key)
+    intro, pair, instruction = content["blocks"]
+    assert intro["text"] == "Consider the following:"
+    assert pair["type"] == "assertion_reason"
+    assert pair["assertion"] == {"label": "Assertion (A):", "text": "A leap year has 366 days."}
+    assert pair["reason"] == {"label": "Reason (R):", "text": "February has one additional day in a leap year."}
+    assert instruction["text"] == "Select the correct answer."
+    assert content["interaction"] == "single_choice"
+    assert content["answer"] == "a"
+
+
+def test_unpaired_assertion_remains_source_text(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, ["1. Assertion: One hour has sixty minutes.", "(a) True", "(b) False"])
+    make_pdf(key, ["1. (a)"])
+    [(_, _, content, _)] = extract(paper, key)
+    assert content["blocks"] == [{"id": "stem", "type": "paragraph", "text": "Assertion: One hour has sixty minutes."}]
+
+
+def test_embedded_prompt_image_is_preserved_as_source_crop(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    with pymupdf.open() as art, pymupdf.open() as doc:
+        square = art.new_page(width=80, height=80)
+        square.draw_circle((40, 40), 25, fill=(0, 0, 0))
+        page = doc.new_page()
+        page.insert_text((40, 50), "1. Identify the shape shown.")
+        page.insert_image(pymupdf.Rect(50, 65, 130, 145), pixmap=square.get_pixmap())
+        page.insert_text((40, 170), "(a) Circle")
+        page.insert_text((40, 190), "(b) Square")
+        doc.save(paper)
+    make_pdf(key, ["1. (a)"])
+    [(_, _, content, _)] = extract(paper, key, tmp_path)
+    crop = next(block for block in content["blocks"] if block["type"] == "source_crop")
+    assert not crop.get("reference")
+    assert pymupdf.Pixmap(tmp_path / crop["file"]).height >= 190
+    assert content["answer"] == "a"
+
+
 def test_conflicting_key_does_not_guess(tmp_path):
     paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
     make_pdf(paper, ["1. Which option is correct?", "(a) A", "(b) B"])
@@ -116,6 +164,10 @@ def test_actual_polity_paper_and_key(tmp_path):
     assert all([option["id"] for option in content["options"]] == list("abcd") for _, _, content, _ in items)
     assert "".join(content["answer"] for _, _, content, _ in items) == POLITY_ANSWERS
     assert not any(issues for _, _, _, issues in items)
+    numbered = next(block for block in items[8][2]["blocks"] if block["type"] == "statements")
+    labeled = next(block for block in items[1][2]["blocks"] if block["type"] == "statements")
+    assert [item["label"] for item in numbered["items"]] == ["1.", "2.", "3.", "4."]
+    assert [item["label"] for item in labeled["items"]] == ["Statement 1:", "Statement 2:"]
     assert {number for number, _, c, _ in items if any(b["type"] == "table" for b in c["blocks"])} == POLITY_TABLES
     for _, page, content, _ in items:
         assert content["blocks"][0]["text"]
