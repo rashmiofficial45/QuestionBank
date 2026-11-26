@@ -40,7 +40,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
   const mode = query.mode === "review" || query.mode === "edit" || query.mode === "publish" || query.mode === "history" ? query.mode : "";
   const draftLink = (number: number, kind = mode) => `${base}?mode=${kind}&q=${number}`;
   return <>
-    <Link className="text-link" href="/admin/imports"><ArrowLeft size={16} /> PDF imports</Link>
+    <Link className="text-link workspace-back" href="/admin/imports"><ArrowLeft size={16} /> PDF imports</Link>
     <div className="admin-head"><div className="page-heading"><span className="tile-icon"><FileText size={21} /></span><h1>{paper.title}</h1><p>{paper.subject} · {paper.paperName}</p></div><ImportStatus value={paper.status} /></div>
     {paper.status !== "ready" ? <section className="panel bank-panel" aria-live="polite"><h2>{paper.stage}</h2>{paper.error && <p className="form-error">{paper.error}</p>}{paper.status === "failed" && <form className="form-actions" action={retryImport.bind(null, id)}><Button type="submit" variant="outline"><RefreshCw />Retry import</Button></form>}{["queued", "processing"].includes(paper.status) && <RefreshImport />}
         <Link className="text-link mt-3" href={mode === "history" ? base : `${base}?mode=history`}>{mode === "history" ? "Hide activity" : "View editorial activity"}</Link>

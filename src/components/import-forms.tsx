@@ -22,10 +22,14 @@ export function UploadForm() {
       <label className="field">Subject <Input name="subject" required maxLength={60} placeholder="Polity" /></label>
     </div>
     <label className="field">Question paper PDF <Input type="file" name="paper" accept=".pdf,application/pdf" required /></label>
-    <label className="field">Answer key PDF <Input type="file" name="key" accept=".pdf,application/pdf" aria-describedby="key-format" /></label>
-    <p id="key-format" className="text-sm text-muted-foreground">Leave this empty if the paper has a separate page that starts with “Answer Key”.</p>
-    <label className="field">Explanation PDF (optional) <Input type="file" name="explanations" accept=".pdf,application/pdf" aria-describedby="explanation-format" /></label>
-    <p id="explanation-format" className="text-sm text-muted-foreground">Use numbered headings such as “Explanation 1” followed by a colon.</p>
+    <div className="grid gap-2">
+      <label className="field">Answer key PDF <Input type="file" name="key" accept=".pdf,application/pdf" aria-describedby="key-format" /></label>
+      <p id="key-format" className="text-sm text-muted-foreground">Leave this empty if the paper has a separate page that starts with “Answer Key”.</p>
+    </div>
+    <div className="grid gap-2">
+      <label className="field">Explanation PDF (optional) <Input type="file" name="explanations" accept=".pdf,application/pdf" aria-describedby="explanation-format" /></label>
+      <p id="explanation-format" className="text-sm text-muted-foreground">Use numbered headings such as “Explanation 1” followed by a colon.</p>
+    </div>
     {state.error && <p className="form-error" role="alert">{state.error}</p>}
     <div><Button type="submit" disabled={pending}><FileUp size={17} />{pending ? "Uploading…" : "Upload and process"}</Button></div>
   </form>;

@@ -78,9 +78,14 @@ export function Shell({ children, admin = false, privateAdmin = false }: { child
       </div>
     </aside>
     <div className="main-shell">
-      <header className="topbar"><div className="shell-crumb"><Button type="button" variant="ghost" size="icon" onClick={toggleSidebar}
-        aria-controls="workspace-sidebar" aria-expanded={!collapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button>
-        <div className="breadcrumb"><span>{admin ? "Admin" : "Study workspace"}</span><ChevronRight size={14} /><strong>{active?.label ?? "Question"}</strong></div></div><Button type="button" variant="outline" size="icon" onClick={toggleTheme} aria-label="Toggle black and white theme"><Sun className="sun-icon" /><Moon className="moon-icon" /></Button></header>
+      <header className="topbar">
+        <Button className="sidebar-toggle" type="button" variant="outline" size="icon" onClick={toggleSidebar}
+          aria-controls="workspace-sidebar" aria-expanded={!collapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button>
+        <div className="topbar-inner">
+          <div className="breadcrumb"><span>{admin ? "Admin" : "Study workspace"}</span><ChevronRight size={14} /><strong>{active?.label ?? "Question"}</strong></div>
+          <Button type="button" variant="outline" size="icon" onClick={toggleTheme} aria-label="Toggle black and white theme"><Sun className="sun-icon" /><Moon className="moon-icon" /></Button>
+        </div>
+      </header>
       <main id="content" tabIndex={-1} className="workspace">{children}</main>
     </div>
   </div></TestFocusContext.Provider>;
