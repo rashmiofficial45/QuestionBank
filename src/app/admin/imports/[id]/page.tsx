@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { EditorialHistory } from "@/components/editorial-history";
 import { Button } from "@/components/ui/button";
+import { SourcePdf } from "@/components/source-pdf";
 import { OptionContent } from "@/components/option-content";
 import { QuestionContent } from "@/components/question-content";
 import { EditForm, RefreshImport } from "@/components/import-forms";
@@ -13,6 +14,8 @@ import { choiceIds } from "@/lib/choice-selection";
 import { isRanked } from "@/lib/ranked-answer";
 import { isWritten } from "@/lib/written-answer";
 import { rankedLabels } from "@/components/ranked-fields";
+import { displayText } from "@/modules/study";
+import { getTaxonomy } from "@/modules/editorial-settings";
 import { getDrafts, getImport, hasExplanationPDF } from "@/modules/imports";
 import { publishImport, retryImport } from "../../actions";
 
@@ -48,6 +51,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
       <section className="panel bank-panel">
         <h2>Import results</h2>
         <p className="results-label">{checked.length} extracted · {eligible.length} ready to publish · {flagged.length} flagged · {published} published</p>
+        <div className="flex flex-wrap gap-3"><a className="text-link" href={`/api/v1/admin/imports/${id}/export?format=csv`}>Export CSV</a><a className="text-link" href={`/api/v1/admin/imports/${id}/export?format=json`}>Export JSON</a></div>
         <p className="results-label">{tableCount} structured {tableCount === 1 ? "table" : "tables"}</p>
         {typeof query.published === "string" && /^\d+$/.test(query.published) && <p className="notice" role="status">{query.published === "0" ? "No new questions were published." : `${query.published} ${query.published === "1" ? "question" : "questions"} published to the student bank.`}</p>}
         <div className="form-actions">
@@ -77,20 +81,20 @@ export default async function ImportDetails({ params, searchParams }: { params: 
           <div className="question-nav"><h2>{mode === "review" ? "Review extracted questions" : "Edit draft questions"}</h2>{flagged.length > 0 && <Link className="text-link" href={draftLink(flagged[0].number)}>First flagged <ArrowRight size={14} /></Link>}</div>
           <div className="question-index" aria-label="Question numbers">{checked.map((draft) => <Link key={draft.id} href={draftLink(draft.number)} aria-current={draft.id === selected.id ? "page" : undefined} aria-label={`Question ${draft.number}${draft.blockers.length ? ", flagged" : ""}`} data-flagged={Boolean(draft.blockers.length)}>{draft.number}</Link>)}</div>
         </section>
-        <div className="review-layout">
-          <section className="panel bank-panel">
+        <div className={selected.page > 0 ? "review-layout" : "admin-section"}>
+          {selected.page > 0 && <section className="panel bank-panel">
             <div className="section-heading"><div><h2>Original paper</h2><p>PDF page {selected.page}</p></div><a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/paper.pdf#page=${selected.page}`}>Open PDF <ArrowUpRight size={15} /></a></div>
             {paper.keyName && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/key.pdf`}>Open answer key <ArrowUpRight size={15} /></a>}
             {explanationPDF && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/explanations.pdf`}>Open explanation PDF <ArrowUpRight size={15} /></a>}
-            <iframe className="pdf-preview" key={selected.page} title={`Original paper, page ${selected.page}`} src={`/api/v1/source/${id}/paper.pdf#page=${selected.page}&toolbar=1`} />
-          </section>
+            <SourcePdf url={`/api/v1/source/${id}/paper.pdf`} sourcePage={selected.page} questionNumber={selected.number} sourceText={displayText(selected.original).split("\n")[0] ?? ""} regions={selected.original.sourceRegions ?? selected.original.blocks.flatMap((block) => block.type === "table" ? [{ page: block.page, bounds: block.bounds }] : [])} />
+          </section>}
           <section className="panel bank-panel">
-            <div className="section-heading"><h2>Question {selected.number}</h2><span className={`pill ${selected.blockers.length ? "pill-error" : "pill-success"}`}>{selected.archivedAt ? "Archived" : selected.blockers.length ? "Flagged" : selected.published && selected.publishedGeneration === selected.generation ? `Published · v${selected.publishedRevision}` : selected.published ? "Unpublished revision" : "Validated"}</span></div>
+            <div className="section-heading"><h2>{selected.content.sourceLabel ?? `Question ${selected.number}`}</h2><span className={`pill ${selected.blockers.length ? "pill-error" : "pill-success"}`}>{selected.archivedAt ? "Archived" : selected.blockers.length ? "Flagged" : selected.published && selected.publishedGeneration === selected.generation ? `Published · v${selected.publishedRevision}` : selected.published ? "Unpublished revision" : "Validated"}</span></div>
             {selected.blockers.length > 0 && <ul className="form-error">{selected.blockers.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
             {mode === "edit" ? <>
               {selected.published && <p className="notice">Changes are saved to a draft. Students see revision {selected.publishedRevision} until you publish again.</p>}
               <EditForm key={selected.id} content={selected.content} importId={id} id={selected.id} issues={selected.issues} generation={selected.generation}
-                classification={{ subject: selected.subject ?? paper.subject, topic: selected.topic ?? "General", difficulty: selected.difficulty ?? "Unrated", tags: selected.tags }} />
+                catalog={await getTaxonomy()} classification={{ subject: selected.subject ?? paper.subject, topic: selected.topic ?? "General", difficulty: selected.difficulty ?? "Unrated", tags: selected.tags }} />
               </> : <>
                 <QuestionContent blocks={selected.content.blocks} importId={id} administrative />
                 {isWritten(selected.content.interaction) ? <p className="notice whitespace-pre-wrap"><strong>Reference answer</strong> {selected.content.answer}</p>

@@ -1,6 +1,8 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useOptimistic, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Check, Flag, Timer, Trash2, X } from "lucide-react";
 import { deleteTestReview, finishPractice, saveResponse, startPractice } from "@/app/(student)/practice/actions";
 import { Button } from "@/components/ui/button";
@@ -15,17 +17,17 @@ import { isRanked } from "@/lib/ranked-answer";
 import { RankedFields, rankedLabels } from "@/components/ranked-fields";
 import { OptionContent } from "@/components/option-content";
 
-export function PracticeSetup({ papers }: { papers: { name: string }[] }) {
+export function PracticeSetup({ papers, defaults }: { papers: { name: string }[]; defaults: { minutes: number; marks: number; penalty: "third" | "none" } }) {
   const [state, action, pending] = useActionState(startPractice, {});
   return <form action={action} className="grid max-w-lg gap-4">
     <label className="field">Paper<NativeSelect name="source" aria-label="Paper" defaultValue={papers.length === 1 ? papers[0].name : ""}>
       <NativeSelectOption value="">All published questions</NativeSelectOption>{papers.map(({ name }) => <NativeSelectOption key={name}>{name}</NativeSelectOption>)}
     </NativeSelect></label>
     <div className="field-grid">
-      <label className="field">Duration (minutes)<Input name="minutes" type="number" defaultValue={60} min={1} max={180} required /></label>
-      <label className="field">Marks per correct answer<Input name="marks" type="number" defaultValue={2} min={1} max={10} required /></label>
+      <label className="field">Duration (minutes)<Input name="minutes" type="number" defaultValue={defaults.minutes} min={1} max={180} required /></label>
+      <label className="field">Marks per correct answer<Input name="marks" type="number" defaultValue={defaults.marks} min={1} max={10} required /></label>
     </div>
-    <label className="field">Wrong answer penalty<NativeSelect name="penalty" aria-label="Wrong answer penalty"><NativeSelectOption value="third">One-third of the marks</NativeSelectOption><NativeSelectOption value="none">No penalty</NativeSelectOption></NativeSelect></label>
+    <label className="field">Wrong answer penalty<NativeSelect name="penalty" aria-label="Wrong answer penalty" defaultValue={defaults.penalty}><NativeSelectOption value="third">One-third of the marks</NativeSelectOption><NativeSelectOption value="none">No penalty</NativeSelectOption></NativeSelect></label>
     {state.error && <p className="form-error" role="alert">{state.error}</p>}
     <Button className="justify-self-start" disabled={pending}>{pending ? "Starting…" : "Start test"}</Button>
   </form>;
@@ -112,9 +114,39 @@ export function TestOptions({ id, questionId, importId, options, interaction, pr
 }
 
 export function DeleteReview({ id }: { id: string }) {
-  return <form action={deleteTestReview.bind(null, id)} onSubmit={(event) => {
-    if (!window.confirm("Delete this test review? Individual attempts will stay in Progress.")) event.preventDefault();
-  }}>
-    <Button type="submit" variant="ghost" size="sm"><Trash2 />Delete review</Button>
-  </form>;
+  const [open, setOpen] = useState(false);
+  const [pending, startDeletion] = useTransition();
+
+  function confirmDelete() {
+    startDeletion(async () => {
+      try {
+        if (await deleteTestReview(id)) {
+          setOpen(false);
+          toast.success("Test review deleted.");
+        } else {
+          setOpen(false);
+          toast.error("This test review is unavailable.");
+        }
+      } catch {
+        setOpen(false);
+        toast.error("The test review could not be deleted. Try again.");
+      }
+    });
+  }
+
+  return <AlertDialog open={open} onOpenChange={(next) => { if (!pending) setOpen(next); }}>
+    <AlertDialogTrigger asChild>
+      <Button type="button" variant="ghost" size="sm"><Trash2 />Delete review</Button>
+    </AlertDialogTrigger>
+    <AlertDialogContent onEscapeKeyDown={(event) => { if (pending) event.preventDefault(); }}>
+      <div className="grid gap-2">
+        <AlertDialogTitle className="text-lg font-semibold">Delete this test review?</AlertDialogTitle>
+        <AlertDialogDescription className="text-sm text-muted-foreground">Individual attempts will stay in Progress.</AlertDialogDescription>
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        <AlertDialogCancel asChild><Button type="button" variant="outline" disabled={pending}>Cancel</Button></AlertDialogCancel>
+        <Button type="button" onClick={confirmDelete} disabled={pending}>{pending ? "Deleting…" : "Delete review"}</Button>
+      </div>
+    </AlertDialogContent>
+  </AlertDialog>;
 }

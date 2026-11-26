@@ -4,15 +4,11 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/database";
-import { attempts, bookmarks, practiceSessions, questions, questionVersions, studyNotes } from "@/database/schema";
+import { attempts, bookmarks, practiceSessions, questions, questionVersions, studyDrills, studyNotes, studyRevision } from "@/database/schema";
 import { activeQuestion, getProfile } from "@/modules/study";
-import type { ChoiceSelection } from "@/lib/choice-selection";
-import { gradeResponse } from "@/lib/practice-scoring";
-import { isRanked } from "@/lib/ranked-answer";
-import { validSelection } from "@/lib/content";
-import { gradeWritten, isWritten, normalizeWritten } from "@/lib/written-answer";
+import { checkSubmission, type AnswerResult } from "@/lib/submit-answer";
 
-export type AnswerState = { correct?: boolean; selected?: ChoiceSelection; answer?: ChoiceSelection; explanation?: string; error?: string };
+export type AnswerState = AnswerResult;
 
 export async function submitAnswer(questionId: string, revision: number, mode: "practice" | "bank", _previous: AnswerState, form: FormData): Promise<AnswerState> {
   const values = form.getAll("option");
@@ -20,34 +16,27 @@ export async function submitAnswer(questionId: string, revision: number, mode: "
   const [question] = await db.select({ content: questionVersions.content }).from(questionVersions)
     .innerJoin(questions, eq(questionVersions.questionId, questions.id))
     .where(and(eq(questions.id, questionId), eq(questionVersions.revision, revision), activeQuestion));
-  if (question && isWritten(question.content.interaction)) {
-    const { answer, interaction, explanation } = question.content;
-    const input = z.string().trim().min(1).max(8000).safeParse(values[0]);
-    if (!input.success || values.length !== 1 || typeof answer !== "string" || !normalizeWritten(interaction, input.data)) {
-      return { error: interaction === "numeric" ? "Enter a valid decimal answer." : "Enter a response before reviewing." };
-    }
-    if (interaction === "descriptive") return { answer, selected: input.data, explanation };
-    const correct = gradeWritten(interaction, answer, input.data) === true;
+  if (!question) return { error: "This option is unavailable. Reload the question and try again." };
+  const { result, attempt } = checkSubmission(question.content, values);
+  if (attempt) {
     const profileId = (await getProfile(true))!;
-    await db.insert(attempts).values({ profileId, questionId, revision, responseText: input.data, correct, mode });
+    await db.insert(attempts).values({ profileId, questionId, revision, mode, ...attempt });
     revalidatePath("/");
     revalidatePath("/progress");
     revalidatePath("/revision");
-    return { answer, selected: input.data, correct, explanation };
   }
-  const selected = question && validSelection(question.content, values);
-  if (!question?.content.answer || !selected?.length) {
-    return { error: "This option is unavailable. Reload the question and try again." };
-  }
-  const profileId = (await getProfile(true))!;
-  const interaction = question.content.interaction;
-  const multiple = interaction === "multiple_choice" || isRanked(interaction);
-  const correct = gradeResponse({ answer: question.content.answer, selected, interaction }) === true;
-  await db.insert(attempts).values({ profileId, questionId, optionId: multiple ? null : selected[0], optionIds: multiple ? selected : null, revision, correct, mode });
-  revalidatePath("/");
-  revalidatePath("/progress");
-  revalidatePath("/revision");
-  return { correct, selected, answer: question.content.answer, explanation: question.content.explanation };
+  return result;
+}
+
+export async function markRevision(questionId: string, marked: boolean) {
+  if (!z.uuid().safeParse(questionId).success || typeof marked !== "boolean") return;
+  const [question] = await db.select({ id: questions.id }).from(questions).where(and(eq(questions.id, questionId), activeQuestion));
+  if (!question) return;
+  const profileId = await getProfile(marked);
+  if (!profileId) return;
+  if (marked) await db.insert(studyRevision).values({ profileId, questionId }).onConflictDoNothing();
+  else await db.delete(studyRevision).where(and(eq(studyRevision.profileId, profileId), eq(studyRevision.questionId, questionId)));
+  revalidatePath("/", "layout");
 }
 
 export async function setBookmark(questionId: string, selected: boolean) {
@@ -78,6 +67,9 @@ export async function resetProgress() {
   if (!profileId) return;
   await db.transaction(async (tx) => {
     await tx.select({ id: practiceSessions.id }).from(practiceSessions).where(eq(practiceSessions.profileId, profileId)).for("update");
+    await tx.select({ id: studyDrills.id }).from(studyDrills).where(eq(studyDrills.profileId, profileId)).for("update");
+    await tx.delete(studyDrills).where(eq(studyDrills.profileId, profileId));
+    await tx.delete(studyRevision).where(eq(studyRevision.profileId, profileId));
     await tx.delete(attempts).where(eq(attempts.profileId, profileId));
     await tx.delete(practiceSessions).where(eq(practiceSessions.profileId, profileId));
     await tx.delete(bookmarks).where(eq(bookmarks.profileId, profileId));

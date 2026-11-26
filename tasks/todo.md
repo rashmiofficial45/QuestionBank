@@ -5,10 +5,10 @@
 | Phase | Status |
 | --- | --- |
 | 1. Architecture and project setup | Complete |
-| 2. PDF ingestion and validation | Complete for the initial workflow. Later document layouts and explanation imports remain in the backlog. |
-| 3. Editorial administration | Core workflows implemented and verified. The user walkthrough is pending. |
-| 4. Question bank and practice | Core formats implemented. Advanced PDF layout reconstruction and rich answer options remain. |
-| 5. Study tools and analytics | Core workflows available. Includes study notes, activity, streaks, subject and topic performance, and saved-test time and skips. |
+| 2. PDF ingestion and validation | PDF and structured-data ingestion with validation, source review, and page checkpoints. |
+| 3. Editorial administration | Independent Review, Edit, and Publish, plus manual drafts, export, taxonomy settings, and duplicate resolution. |
+| 4. Question bank and practice | Core formats and rich choice options implemented. Difficult source layouts retain original regions for review. |
+| 5. Study tools and analytics | Includes timed and untimed sessions, bookmarks, notes, revision, filters, and analytics. |
 | 6. Release verification | Local build, browser, security, accessibility, visual, database, and extraction checks passed. Live Docker run deferred. |
 
 ## Original brief through Section 10
@@ -18,11 +18,11 @@ These section numbers follow the 38-section brief. The six implementation phases
 | Sections | Current coverage |
 | --- | --- |
 | 1–2. Product and scope | PDF-to-practice workflow, anonymous progress, and private editorial access. |
-| 3–5. Stack, architecture, and organization | Next.js, PostgreSQL, and a separate Python job worker run locally. The full technology list, including a dedicated PDF.js viewer and Docling, is partly implemented. |
-| 6. Admin console | Dashboard, import and retry history, draft editing, classification, publication, and revisions. Standalone taxonomy, settings, and duplicate-management screens remain open. |
-| 7. PDF upload | Separate or combined paper and answer key, plus an optional explanation PDF. CSV, JSON, and standalone manual creation remain open. |
-| 8. PDF processing pipeline | Persistent jobs with leases, progress, retry, OCR, answer mapping, and explanation extraction. Chunk-level retries and cross-import duplicate detection remain open. |
-| 9. High-fidelity parsing | Verified Polity profile, inferred two-column reading order, source crops, source order, and alphabetic options. More complex formatting, merged grids, and numeric or Roman option auto-detection remain limited. |
+| 3–5. Stack, architecture, and organization | Next.js, PostgreSQL, and a separate Python job worker run locally. PDF.js is used for editorial source review. Extraction uses PyMuPDF and Tesseract. |
+| 6. Admin console | Dashboard, import and retry history, draft editing, classification, publication, and revisions. Taxonomy, default scoring settings, and duplicate review have dedicated admin screens. |
+| 7. PDF upload | Separate or combined paper and answer key, plus an optional explanation PDF. CSV and JSON import/export and standalone manual drafts share the editorial workflow. |
+| 8. PDF processing pipeline | Persistent jobs with leases, progress, retry, OCR, answer mapping, and explanation extraction. Retries reuse completed page analysis. Duplicate review matches normalized questions across imports. |
+| 9. High-fidelity parsing | Verified Polity profile, multi-page and clear mixed-column reading order, source regions, alphabetic/numeric/Roman choices, and geometry-backed merged tables. |
 | 10. Question formats | Supported formats include image and equation choices. Automatic extraction of arbitrary diagrams, graphs, shared passages, and formulas remains limited. |
 
 ## 1. Working MVP preview
@@ -61,8 +61,27 @@ These section numbers follow the 38-section brief. The six implementation phases
 - [x] Preserve embedded native prompt images with zoomable original crops.
 - [x] Add browser-local notes and measured study activity, streaks, weak topics, and subject analytics.
 - [x] Add image and equation answer options with editorial verification.
-- [ ] Extend automatic reconstruction of advanced PDF layouts and additional option numbering conventions.
+- [x] Cover explicit section numbering, numeric and Roman choices, multi-page continuations, clear mixed columns, merged cells, and section-aware explanations.
 - [ ] Review student features with the user.
+
+## Completion follow-up
+
+- [x] Stage manual questions and CSV or JSON records as drafts. Export CSV and JSON with portable source images where available.
+- [x] Manage subject, topic, subtopic, and tag suggestions. Save live default test settings.
+- [x] Review exact normalized duplicates across imports and resolve them by keeping the group or excluding a draft and archiving its published revision.
+- [x] Render synchronized source PDFs with PDF.js, page navigation, highlighting, zoom, and the original-document link.
+- [x] Add, reorder, and remove rich blocks. Edit image descriptions, merged cells, lists, equations, code, and choices. Restore the original draft and use undo, redo, browser backup, or server autosave.
+- [x] Filter by topic, difficulty, tag, and study status. Create and resume untimed practice sets, review finished sets, and mark questions for revision.
+- [x] Persist editing settings and practice data with additive migrations. Existing question revisions and attempts retain their IDs and content.
+- [x] Verify native builds, migrations, import and publication, retained revisions, activity, PDF rendering, and the new workflows in Chrome, including mobile Black and White checks.
+
+Known limits
+
+- Automatic reconstruction remains conservative for ambiguous layouts, unruled or nested tables, low-quality scans, and mathematical or graphical conventions without reliable geometry. Source review remains part of verification. Text matching for older PDFs highlights only unambiguous matches.
+- Answer-key matching supports explicit section and booklet headings. Keys with unidentified or inconsistent booklet variants require editorial mapping. PDF import uses English OCR. Optional Docling and vision-based extraction providers are open.
+- Duplicate matching uses normalized content. Near-duplicate paraphrases and image-dependent equivalence require editorial review. Classification changes affect suggestions and future edits while historical labels are preserved.
+- Checkpoints persist page layout analysis. The final question assembly and transactional draft staging run again after a retry. Export reports missing and oversized source images.
+- Student and editorial operations use typed server actions. A comprehensive external JSON API for every workflow is outside the delivered set.
 
 ## 5. Release readiness
 

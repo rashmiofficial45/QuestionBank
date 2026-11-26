@@ -112,15 +112,18 @@ export async function finishPractice(id: string) {
 
 export async function deleteTestReview(id: string) {
   const profileId = await getProfile();
-  if (!profileId || !z.uuid().safeParse(id).success) return;
-  await db.transaction(async (tx) => {
+  if (!profileId || !z.uuid().safeParse(id).success) return false;
+  const deleted = await db.transaction(async (tx) => {
     const predicate = and(eq(practiceSessions.id, id), eq(practiceSessions.profileId, profileId), isNotNull(practiceSessions.submittedAt));
     const [session] = await tx.select({ id: practiceSessions.id }).from(practiceSessions).where(predicate).for("update");
-    if (!session) return;
+    if (!session) return false;
     await tx.update(attempts).set({ sessionId: null }).where(and(eq(attempts.sessionId, id), eq(attempts.profileId, profileId)));
     await tx.delete(practiceSessions).where(predicate);
+    return true;
   });
+  if (!deleted) return false;
   revalidatePath("/practice");
   revalidatePath("/progress");
   revalidatePath("/revision");
+  return true;
 }

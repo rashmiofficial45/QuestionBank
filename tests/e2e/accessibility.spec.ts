@@ -1,6 +1,30 @@
 import { expect, test } from "@playwright/test";
 import { checkAccessibility } from "./verify-accessibility";
 
+test("each PDF can be removed or replaced before uploading", async ({ page }) => {
+  test.skip(process.env.EDITORIAL_ACCESSIBILITY !== "1", "Enable for the local operator preview.");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin/imports/new");
+  await page.getByRole("button", { name: "Toggle black and white theme" }).click();
+  const names = ["Question paper PDF", "Answer key PDF", "Explanation PDF"];
+  const chooser = (name: string) => page.getByLabel(name === "Explanation PDF" ? `${name} (optional)` : name, { exact: true });
+  const file = (name: string) => ({ name, mimeType: "application/pdf", buffer: Buffer.from("%PDF-fixture") });
+  for (const name of names) await chooser(name).setInputFiles(file("first-selection.pdf"));
+  for (const name of names) {
+    const input = chooser(name);
+    const clear = page.getByRole("button", { name: `Remove ${name}`, exact: true });
+    await clear.click();
+    await expect(clear).toHaveCount(0);
+    await expect(input).toBeFocused();
+    expect(await input.evaluate((element: HTMLInputElement) => element.files?.length)).toBe(0);
+    await input.setInputFiles(file("replacement.pdf"));
+    await expect(clear).toBeVisible();
+    expect(await input.evaluate((element: HTMLInputElement) => element.files?.[0]?.name)).toBe("replacement.pdf");
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  await checkAccessibility(page, "PDF selections with remove controls in Black");
+});
+
 test("student workspace passes accessibility checks in White and Black", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("Tab");

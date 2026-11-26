@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { BookOpen, Bookmark, ChartNoAxesColumnIncreasing, ChevronRight, Compass, Files, House, LayoutDashboard, ListRestart, Maximize, Minimize, Moon, PanelLeftClose, PanelLeftOpen, ShieldCheck, Sun, Zap } from "lucide-react";
+import { BookOpen, Bookmark, ChartNoAxesColumnIncreasing, ChevronRight, Compass, Files, House, LayoutDashboard, ListRestart, Maximize, Minimize, Moon, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sun, Zap } from "lucide-react";
 import Link from "next/link";
 import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -17,6 +17,7 @@ const studyLinks = [
 const adminLinks = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/imports", label: "PDF imports", icon: Files },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 const TestFocusContext = createContext({ focused: false, toggle: () => {} });

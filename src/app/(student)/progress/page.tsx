@@ -42,6 +42,8 @@ export default async function ProgressPage() {
         ["Questions available", usage.total],
         ["Incorrect attempts", stats.total - stats.correct],
         ["Skipped in saved tests", usage.skipped],
+        ["Completed untimed sets", usage.drillCount],
+        ["Skipped in untimed sets", usage.drillSkipped],
         ["Time in saved tests", `${Math.floor(usage.seconds / 60)}m ${usage.seconds % 60}s`],
       ].map(([label, value]) => <Card key={label} className="dashboard-metric shadow-none"><CardContent><span>{label}</span><strong>{value}</strong></CardContent></Card>)}
     </section>

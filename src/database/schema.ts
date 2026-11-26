@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex, primaryKey, uuid, boolean } from "drizzle-orm/pg-core";
+import type { ChoiceSelection } from "../lib/choice-selection";
 import type { Content } from "../lib/content";
 
 const created = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -121,3 +122,23 @@ export const studyNotes = pgTable("study_notes", {
   questionId: uuid("question_id").notNull().references(() => questions.id),
   text: text().notNull(),
 }, (table) => [primaryKey({ columns: [table.profileId, table.questionId] })]);
+
+export const editorialSettings = pgTable("editorial_settings", {
+  key: text().primaryKey(),
+  value: jsonb().notNull(),
+});
+
+export const studyRevision = pgTable("study_revision_queue", {
+  profileId: uuid("profile_id").notNull(),
+  questionId: uuid("question_id").notNull().references(() => questions.id),
+  createdAt: created(),
+}, (table) => [primaryKey({ columns: [table.profileId, table.questionId] })]);
+
+export const studyDrills = pgTable("study_drills", {
+  id: uuid().primaryKey().defaultRandom(),
+  profileId: uuid("profile_id").notNull(),
+  manifest: jsonb().$type<TestQuestion[]>().notNull(),
+  responses: jsonb().$type<Record<string, { answered: boolean; correct?: boolean; selected?: ChoiceSelection }>>().notNull().default({}),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  createdAt: created(),
+}, (table) => [index("study_drills_profile_date_idx").on(table.profileId, table.createdAt)]);

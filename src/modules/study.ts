@@ -2,7 +2,7 @@ import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/database";
-import { attempts, bookmarks, practiceSessions, questions, questionVersions } from "@/database/schema";
+import { attempts, bookmarks, practiceSessions, questions, questionVersions, studyRevision } from "@/database/schema";
 import { presentations, type Content } from "@/lib/content";
 import { isWritten } from "@/lib/written-answer";
 import { isRanked } from "@/lib/ranked-answer";
@@ -30,6 +30,7 @@ export function displayText(content: Content) {
     if (block.type === "paragraph") return block.text;
     if (block.type === "statements") return block.items.map(({ label, text }) => `${label} ${text}`).join("\n");
     if (block.type === "assertion_reason") return [block.assertion, block.reason].map(({ label, text }) => `${label} ${text}`).join("\n");
+    if (block.type === "image") return block.alt;
     if (block.type === "table") return [block.headers, ...block.rows].map((row) => row.join(" ")).join("\n");
     return "";
   }).filter(Boolean).join("\n");
@@ -45,12 +46,33 @@ export type QuestionSummary = Pick<typeof questions.$inferSelect, keyof typeof l
 
 export const PAGE_SIZE = 8;
 
-export async function browse(query = "", subject = "", page = 1, source = "", format = "") {
+export const studyStatuses = {
+  attempted: "Attempted", unattempted: "Unattempted", correct: "Answered correctly",
+  incorrect: "Answered incorrectly", bookmarked: "Bookmarked", revision: "Marked for revision",
+} as const;
+export type StudyStatus = keyof typeof studyStatuses;
+type StudyFilters = { topic?: string; difficulty?: string; tag?: string; status?: StudyStatus; profile?: string | null };
+
+function profileFilter(status: StudyStatus | undefined, profile: string | null | undefined) {
+  if (!status) return undefined;
+  if (!profile) return status === "unattempted" ? undefined : sql`false`;
+  if (status === "bookmarked") return sql`exists (select 1 from ${bookmarks} where ${bookmarks.profileId} = ${profile} and ${bookmarks.questionId} = ${questions.id})`;
+  if (status === "revision") return sql`exists (select 1 from ${studyRevision} where ${studyRevision.profileId} = ${profile} and ${studyRevision.questionId} = ${questions.id})`;
+  const found = sql`exists (select 1 from ${attempts} where ${attempts.profileId} = ${profile} and ${attempts.questionId} = ${questions.id}
+    ${status === "correct" || status === "incorrect" ? sql`and ${attempts.correct} = ${status === "correct"}` : sql``})`;
+  return status === "unattempted" ? sql`not ${found}` : found;
+}
+
+export async function browse(query = "", subject = "", page = 1, source = "", format = "", filters: StudyFilters = {}) {
   const escaped = query.replace(/[\\%_]/g, "\\$&");
   const predicate = and(
     activeQuestion,
     subject ? eq(questions.subject, subject) : undefined,
     source ? eq(questions.source, source) : undefined,
+    filters.topic ? eq(questions.topic, filters.topic) : undefined,
+    filters.difficulty ? eq(questions.difficulty, filters.difficulty) : undefined,
+    filters.tag ? sql`${filters.tag} = any(${questions.tags})` : undefined,
+    profileFilter(filters.status, filters.profile),
     format === "table" ? sql`${questions.content}->'blocks' @> '[{"type":"table"}]'::jsonb` : undefined,
     format === "assertion_reason" ? sql`${questions.content}->'blocks' @> '[{"type":"assertion_reason"}]'::jsonb` : undefined,
     format === "statements" ? sql`exists (
@@ -134,9 +156,11 @@ export async function revisionQueue(profileId: string) {
     questionId: attempts.questionId, correct: attempts.correct, missedAt: attempts.createdAt,
   }).from(attempts).where(eq(attempts.profileId, profileId))
     .orderBy(attempts.questionId, desc(attempts.createdAt), desc(attempts.id)).as("latest_attempt");
-  return db.select({ ...listing, missedAt: latest.missedAt }).from(latest)
-    .innerJoin(questions, eq(questions.id, latest.questionId))
-    .where(and(activeQuestion, eq(latest.correct, false))).orderBy(desc(latest.missedAt), questions.id).limit(100);
+  return db.select({ ...listing, missedAt: sql<Date | null>`coalesce(${studyRevision.createdAt}, ${latest.missedAt})`, manuallyMarked: sql<boolean>`${studyRevision.questionId} is not null` })
+    .from(questions).leftJoin(latest, eq(questions.id, latest.questionId))
+    .leftJoin(studyRevision, and(eq(studyRevision.questionId, questions.id), eq(studyRevision.profileId, profileId)))
+    .where(and(activeQuestion, or(eq(latest.correct, false), sql`${studyRevision.questionId} is not null`)))
+    .orderBy(sql`coalesce(${studyRevision.createdAt}, ${latest.missedAt}) desc`, questions.id).limit(100);
 }
 
 export async function topicPerformance(profileId: string) {

@@ -1,11 +1,11 @@
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/database";
-import { attempts, practiceSessions, questions } from "@/database/schema";
+import { attempts, practiceSessions, questions, studyDrills } from "@/database/schema";
 import { activeQuestion } from "./study";
 
 export async function activity(profile: string | null) {
   const day = sql<string>`to_char(${attempts.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD')`;
-  const [total, counts, tests] = await Promise.all([
+  const [total, counts, tests, drills] = await Promise.all([
     db.$count(questions, activeQuestion),
     profile ? db.select({ day, attempts: sql<number>`count(*)::int` }).from(attempts)
       .where(eq(attempts.profileId, profile)).groupBy(day).orderBy(day) : [],
@@ -16,6 +16,13 @@ export async function activity(profile: string | null) {
         where response.value ? 'option' or response.value ? 'options'
       )), 0)::int`,
     }).from(practiceSessions).where(and(eq(practiceSessions.profileId, profile), isNotNull(practiceSessions.submittedAt))) : [],
+    profile ? db.select({
+      count: sql<number>`count(*)::int`,
+      skipped: sql<number>`coalesce(sum(jsonb_array_length(${studyDrills.manifest}) - (
+        select count(*) from jsonb_each(${studyDrills.responses}) as response(id, value)
+        where response.value->>'answered' = 'true'
+      )), 0)::int`,
+    }).from(studyDrills).where(and(eq(studyDrills.profileId, profile), isNotNull(studyDrills.submittedAt))) : [],
   ]);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const end = Date.parse(today + "T00:00:00Z");
@@ -28,7 +35,7 @@ export async function activity(profile: string | null) {
     return { day: date, attempts: countsByDay.get(date) ?? 0 };
   });
   return {
-    total, recent, streak, seconds: tests[0]?.seconds ?? 0, skipped: tests[0]?.skipped ?? 0,
+    total, recent, streak, drillCount: drills[0]?.count ?? 0, drillSkipped: drills[0]?.skipped ?? 0, seconds: tests[0]?.seconds ?? 0, skipped: tests[0]?.skipped ?? 0,
     week: recent.slice(-7).reduce((sum, row) => sum + row.attempts, 0),
     month: recent.reduce((sum, row) => sum + row.attempts, 0),
   };

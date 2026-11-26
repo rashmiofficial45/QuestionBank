@@ -322,3 +322,91 @@ def test_rasterized_polity_layout_and_key():
     assert {number for number, _, c, _ in items if any(b["type"] == "table" for b in c["blocks"])} == POLITY_TABLES
     assert all(any("Question text was read using OCR" in flag for flag in issues)
                for _, _, _, issues in items)
+
+
+def test_sectioned_numbering_numeric_roman_and_passage(tmp_path):
+    paper, key, explanations = (tmp_path / name for name in ("paper.pdf", "key.pdf", "explanations.pdf"))
+    make_pdf(paper, [
+        "Section A", "Passage for questions 1-1: A shared reading passage.",
+        "1. First question?", "Options:", "(1) One", "(2) Two", "(3) Three",
+        "Section B", "1. Second question?", "Choices:", "(I) First", "(II) Second",
+    ])
+    make_pdf(key, ["Section A", "1. 3", "Section B", "1. II"])
+    make_pdf(explanations, ["Section A", "Explanation 1: Answer three.", "Section B", "Explanation 1: Answer two."])
+    first, second = extract(paper, key, explanation=explanations)
+    assert [first[0], second[0]] == [1, 2]
+    assert first[2]["blocks"][0]["style"] == "passage"
+    assert first[2]["options"][2]["id"] == first[2]["answer"] == "3"
+    assert second[2]["options"][1]["id"] == second[2]["answer"] == "ii"
+    assert second[2]["sourceLabel"] == "Section B · Question 1"
+    assert second[2]["explanation"] == "Answer two."
+
+
+def test_page_checkpoints_reuse_completed_analysis_on_retry(tmp_path, monkeypatch):
+    import importlib
+
+    module = importlib.import_module("extract")
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, ["1. Choose one.", "(a) A", "(b) B"])
+    make_pdf(key, ["1. B"])
+    cache = tmp_path / "checkpoints"
+    initial = extract(paper, key, checkpoint=cache)
+    def new_analysis(*args, **kwargs):
+        raise AssertionError("A completed page should be reused during retry")
+    monkeypatch.setattr(module, "analyze_page", new_analysis)
+    assert extract(paper, key, checkpoint=cache) == initial
+
+
+def test_reconstructs_a_merged_header_from_pdf_geometry(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((40, 40), "1. Refer to the table.")
+        for bounds in ((40, 60, 240, 85), (40, 85, 140, 110), (140, 85, 240, 110)):
+            page.draw_rect(pymupdf.Rect(bounds))
+        for point, value in [((50, 77), "Merged heading"), ((50, 102), "Left"), ((150, 102), "Right")]:
+            page.insert_text(point, value)
+        page.insert_text((40, 133), "(a) Left")
+        page.insert_text((40, 153), "(b) Right")
+        doc.save(paper)
+    make_pdf(key, ["1. B"])
+    [(_, _, content, _)] = extract(paper, key)
+    table = next(block for block in content["blocks"] if block["type"] == "table")
+    assert table["headers"] == ["Merged heading", ""]
+    assert table["spans"] == [{"row": 0, "column": 0, "rowSpan": 1, "colSpan": 2}]
+
+
+def test_mixed_columns_and_multipage_question_keep_reading_order(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((40, 40), "Section A: " + "Full-width instructions " * 3)
+        for x, number, subject in [(40, 1, "Left"), (330, 2, "Right")]:
+            page.insert_text((x, 70), f"{number}. {subject} question?")
+            page.insert_text((x, 90), "(a) First")
+            if number == 1:
+                page.insert_text((x, 110), "(b) Second")
+        page = doc.new_page()
+        page.insert_text((40, 45), "(b) Continues on the next page")
+        page.insert_text((40, 75), "3. Next question?")
+        page.insert_text((40, 95), "(a) First")
+        page.insert_text((40, 115), "(b) Second")
+        doc.save(paper)
+    make_pdf(key, ["Section A", "1. A", "2. B", "3. A"])
+    items = extract(paper, key)
+    assert [item[0] for item in items] == [1, 2, 3]
+    assert items[1][2]["answer"] == "b"
+    assert items[1][2]["options"][1]["text"] == "Continues on the next page"
+    assert {region["page"] for region in items[1][2]["sourceRegions"]} == {1, 2}
+
+
+def test_uses_only_the_matching_explicit_booklet(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, ["Test Booklet Series B", "1. Choose one.", "(a) First", "(b) Second"])
+    make_pdf(key, ["Booklet A", "1. A", "Booklet B", "1. B"])
+    [(_, _, content, _)] = extract(paper, key)
+    assert content["answer"] == "b"
+    make_pdf(paper, ["1. Choose one.", "(a) First", "(b) Second"])
+    [(_, _, content, issues)] = extract(paper, key)
+    assert content["answer"] is None
+    assert any("booklet could not be matched" in issue for issue in issues)

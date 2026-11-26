@@ -3,7 +3,7 @@ import { choiceIds } from "./choice-selection";
 import { isWritten, normalizeWritten } from "./written-answer";
 import { isRanked } from "./ranked-answer";
 
-export const textStyles = ["paragraph", "heading", "passage", "quote", "code", "equation"] as const;
+export const textStyles = ["paragraph", "heading", "passage", "quote", "code", "equation", "ordered_list", "unordered_list"] as const;
 export const presentations = {
   matching: "Match the following",
   chronology: "Chronological ordering",
@@ -31,7 +31,36 @@ const crop = z.object({
   alt: z.string().min(1),
   reference: z.boolean().optional(),
 });
+const image = z.object({
+  id: z.string(), type: z.literal("image"), alt: z.string().trim().min(1).max(500),
+  data: z.string().max(1_400_000).regex(/^data:image\/(?:png;base64,iVBORw0KGgo|jpeg;base64,\/9j\/)[a-zA-Z0-9+/]*={0,2}$/),
+});
 const cell = z.string().trim().max(2000);
+const span = z.object({
+  row: z.number().int().min(0), column: z.number().int().min(0),
+  rowSpan: z.number().int().min(1), colSpan: z.number().int().min(1),
+});
+export type TableSpan = z.infer<typeof span>;
+export function tableCellSpan(spans: TableSpan[] = [], row: number, column: number) {
+  const merged = spans.find((value) => row >= value.row && row < value.row + value.rowSpan &&
+    column >= value.column && column < value.column + value.colSpan);
+  if (merged && (row !== merged.row || column !== merged.column)) return null;
+  return { rowSpan: merged?.rowSpan ?? 1, colSpan: merged?.colSpan ?? 1 };
+}
+function validSpans(grid: string[][], spans: TableSpan[]) {
+  const positions = new Set<string>();
+  for (const span of spans) {
+    if (span.row + span.rowSpan > grid.length || span.column + span.colSpan > grid[0].length) return false;
+    for (let row = span.row; row < span.row + span.rowSpan; row++) {
+      for (let column = span.column; column < span.column + span.colSpan; column++) {
+        const key = `${row}:${column}`;
+        if (positions.has(key) || ((row !== span.row || column !== span.column) && grid[row][column])) return false;
+        positions.add(key);
+      }
+    }
+  }
+  return true;
+}
 const table = z.object({
   id: z.string(),
   type: z.literal("table"),
@@ -39,21 +68,24 @@ const table = z.object({
   bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]),
   headers: z.array(cell).min(2).max(12),
   rows: z.array(z.array(cell).min(2).max(12)).min(1).max(39),
-}).refine(({ headers, rows, bounds }) =>
-  rows.every((row) => row.length === headers.length) && bounds[2] > bounds[0] && bounds[3] > bounds[1],
+  spans: z.array(span).max(120).optional(),
+}).refine(({ headers, rows, bounds, spans }) =>
+  rows.every((row) => row.length === headers.length) && bounds[2] > bounds[0] && bounds[3] > bounds[1] && validSpans([headers, ...rows], spans ?? []),
 { message: "Table requires a valid source rectangle and the same number of cells in every row." });
 export const optionSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/),
   label: z.string().trim().min(1).max(12),
   text: z.string().trim().min(1).max(8000),
   blocks: z.array(z.discriminatedUnion("type", [
-    paragraph.extend({ style: z.literal("equation"), text: z.string().trim().min(1).max(8000) }), crop,
+    paragraph.extend({ style: z.literal("equation"), text: z.string().trim().min(1).max(8000) }), crop, image,
   ])).min(1).max(6).optional(),
 });
 const question = z.object({
   version: z.literal(1),
   presentation: presentationSchema.optional(),
-  blocks: z.array(z.discriminatedUnion("type", [paragraph, statements, assertionReason, crop, table])).min(1).max(100),
+  sourceLabel: z.string().max(100).optional(),
+  sourceRegions: z.array(z.object({ page: z.number().int().positive(), bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]) })).max(100).optional(),
+  blocks: z.array(z.discriminatedUnion("type", [paragraph, statements, assertionReason, crop, table, image])).min(1).max(100),
   options: z.array(optionSchema).max(12),
   explanation: z.string().trim().max(8000),
 });

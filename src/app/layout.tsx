@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" className={GeistSans.variable} suppressHydrationWarning><body>{children}</body></html>;
+  return <html lang="en" className={GeistSans.variable} suppressHydrationWarning><body>{children}<Toaster /></body></html>;
 }

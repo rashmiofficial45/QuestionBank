@@ -6,6 +6,7 @@ import { useActionState, useEffect, useState, useTransition } from "react";
 import { OptionContent } from "@/components/option-content";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { answerDrill } from "@/app/(student)/practice/drill/actions";
 import { submitAnswer, type AnswerState } from "@/app/(student)/actions";
 import type { Content } from "@/lib/content";
 import { choiceIds } from "@/lib/choice-selection";
@@ -14,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { isRanked } from "@/lib/ranked-answer";
 import { RankedFields, rankedLabels } from "@/components/ranked-fields";
 
-type Props = { terms?: string[]; id: string; importId?: string | null; revision: number; options: Content["options"]; interaction: Content["interaction"]; prompts?: string[]; next?: string; inline?: boolean; mode?: "practice" | "bank" };
+type Props = { testSessionId?: string; drillId?: string; initialResult?: AnswerState; terms?: string[]; id: string; importId?: string | null; revision: number; options: Content["options"]; interaction: Content["interaction"]; prompts?: string[]; next?: string; inline?: boolean; mode?: "practice" | "bank" };
 
 export function AnswerForm(props: Props) {
   const [round, setRound] = useState(0);
@@ -23,8 +24,8 @@ export function AnswerForm(props: Props) {
   return <AnswerRound key={round} {...props} retry={() => setRound(round + 1)} />;
 }
 
-function RankedRound({ id, revision, mode = "bank", options, prompts, retry, next }: Props & { retry: () => void }) {
-  const [result, action, pending] = useActionState(submitAnswer.bind(null, id, revision, mode), {});
+function RankedRound({ id, revision, mode = "bank", options, prompts, retry, next, drillId, initialResult }: Props & { retry: () => void }) {
+  const [result, action, pending] = useActionState(drillId ? answerDrill.bind(null, drillId, id) : submitAnswer.bind(null, id, revision, mode), initialResult ?? {});
   return <form action={action} className="answer-form grid gap-3">
     <fieldset disabled={pending || Boolean(result.answer)}>
       <legend>{prompts ? "Match each prompt" : "Place items in order"}</legend>
@@ -33,27 +34,27 @@ function RankedRound({ id, revision, mode = "bank", options, prompts, retry, nex
     {result.error && <p className="form-error" role="alert">{result.error}</p>}
     {result.answer ? <>
       <Alert className={`answer-result ${result.correct ? "answer-correct" : "answer-incorrect"}`}>
-        <AlertTitle>{result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
+        <AlertTitle>{result.correct === undefined ? "Reference answer" : result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
         <AlertDescription className="whitespace-pre-wrap">{rankedLabels(options, choiceIds(result.answer), prompts)}</AlertDescription>
       </Alert>
       {result.explanation && <details><summary>Explanation</summary><p>{result.explanation}</p></details>}
-      <div className="form-actions"><Button type="button" variant="outline" onClick={retry}>Try again</Button>
+      <div className="form-actions">{!drillId && <Button type="button" variant="outline" onClick={retry}>Try again</Button>}
         {next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</div>
     </> : <Button type="submit" disabled={pending} className="justify-self-start">Check answer</Button>}
   </form>;
 }
 
-function WrittenRound({ id, revision, interaction, mode = "bank", retry, next }: Props & { interaction: WrittenInteraction; retry: () => void }) {
+function WrittenRound({ id, revision, interaction, mode = "bank", retry, next, drillId, initialResult }: Props & { interaction: WrittenInteraction; retry: () => void }) {
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
-  const [response, setResponse] = useState("");
-  const [result, setResult] = useState<AnswerState>({});
+  const [response, setResponse] = useState(typeof initialResult?.selected === "string" ? initialResult.selected : "");
+  const [result, setResult] = useState<AnswerState>(initialResult ?? {});
   const [pending, startSubmission] = useTransition();
   const descriptive = interaction === "descriptive";
   return <form className="answer-form grid gap-3" onSubmit={(event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    startSubmission(async () => setResult(await submitAnswer(id, revision, mode, {}, data)));
+    startSubmission(async () => setResult(await (drillId ? answerDrill(drillId, id, {}, data) : submitAnswer(id, revision, mode, {}, data))));
   }}>
     <label className="field">Your response
       <Textarea name="option" aria-label="Your response" value={response} onChange={(event) => setResponse(event.target.value)}
@@ -63,22 +64,22 @@ function WrittenRound({ id, revision, interaction, mode = "bank", retry, next }:
     {result.error && <p className="form-error" role="alert">{result.error}</p>}
     {result.answer ? <>
       <Alert className={descriptive ? undefined : `answer-result ${result.correct ? "answer-correct" : "answer-incorrect"}`}>
-        <AlertTitle>{descriptive ? "Reference answer" : result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
+        <AlertTitle>{descriptive || result.correct === undefined ? "Reference answer" : result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
         <AlertDescription className="whitespace-pre-wrap">{result.answer}</AlertDescription>
       </Alert>
       {descriptive && <p className="text-sm text-muted-foreground">Compare your response with the reference answer.</p>}
       {result.explanation && <details className="source-text"><summary>Explanation</summary><p>{result.explanation}</p></details>}
-      <div className="form-actions"><Button type="button" variant="outline" onClick={retry}>Try again</Button>
+      <div className="form-actions">{!drillId && <Button type="button" variant="outline" onClick={retry}>Try again</Button>}
         {next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</div>
     </> : <Button type="submit" disabled={!ready || pending || !response.trim()} className="justify-self-start">{descriptive ? "Reveal reference answer" : "Check answer"}</Button>}
   </form>;
 }
 
-function AnswerRound({ id, importId, revision, options, interaction, next, terms, inline = false, mode = "bank", retry }: Props & { retry: () => void }) {
+function AnswerRound({ id, importId, testSessionId, revision, options, interaction, next, terms, inline = false, mode = "bank", retry, drillId, initialResult }: Props & { retry: () => void }) {
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
-  const [selected, select] = useState<string[]>([]);
-  const [result, action, pending] = useActionState(submitAnswer.bind(null, id, revision, mode), {});
+  const [selected, select] = useState<string[]>(() => choiceIds(initialResult?.selected));
+  const [result, action, pending] = useActionState(drillId ? answerDrill.bind(null, drillId, id) : submitAnswer.bind(null, id, revision, mode), initialResult ?? {});
   const answerIds = choiceIds(result.answer);
   const answers = options.filter((option) => answerIds.includes(option.id));
   const graded = answers.length > 0;
@@ -94,7 +95,7 @@ function AnswerRound({ id, importId, revision, options, interaction, next, terms
         const state = correct ? "option-correct" : incorrect ? "option-incorrect" : "";
         const checked = selected.includes(option.id);
         const content = <>
-          <span className="option-letter">{option.label}.</span><OptionContent option={option} importId={importId} terms={terms} />
+          <span className="option-letter">{option.label}.</span><OptionContent option={option} importId={importId} testSessionId={testSessionId} terms={terms} />
           {correct ? <Check size={17} aria-label="Correct" /> : incorrect ? <X size={17} aria-label="Your answer was incorrect" /> : !inline && !multiple && <span className="option-radio" />}
         </>;
         return immediate
@@ -109,7 +110,7 @@ function AnswerRound({ id, importId, revision, options, interaction, next, terms
       {result.error && <p className="form-error">{result.error}</p>}
       {graded && <Alert className={`answer-result mt-3 ${result.correct ? "answer-correct" : "answer-incorrect"}`}>
         {result.correct ? <Check /> : <X />}
-        <AlertTitle>{result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
+        <AlertTitle>{result.correct === undefined ? "Reference answer" : result.correct ? "Correct answer" : "Incorrect answer"}</AlertTitle>
         <AlertDescription>{answers.length === 1 ? "Correct option: " : "Correct options: "}{answers.map((answer) => `${answer.label}. ${answer.text}`).join("; ")}</AlertDescription>
       </Alert>}
       {graded && result.explanation && <details className="source-text rounded-md border p-3"><summary>Explanation</summary><p>{result.explanation}</p></details>}
@@ -117,7 +118,7 @@ function AnswerRound({ id, importId, revision, options, interaction, next, terms
     {immediate && !graded && <p className="mt-2 text-xs text-muted-foreground">Choose an option to check your answer.</p>}
     {(!immediate || graded) && <div className="form-actions">
       {graded
-        ? <><Button type="button" variant="outline" size="sm" onClick={retry}><RotateCcw /> Try again</Button>{next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</>
+        ? <>{!drillId && <Button type="button" variant="outline" size="sm" onClick={retry}><RotateCcw /> Try again</Button>}{next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</>
         : <Button type="submit" disabled={!selected.length || pending}><CircleCheck />{pending ? "Checking…" : "Check answer"}</Button>}
     </div>}
   </form>;

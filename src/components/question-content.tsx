@@ -1,5 +1,5 @@
 import { SearchHighlight } from "@/components/search-highlight";
-import type { Content } from "@/lib/content";
+import { tableCellSpan, type Content } from "@/lib/content";
 import { statementMarker } from "@/lib/statement-content";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { equationMarkup } from "@/components/option-content";
@@ -39,6 +39,12 @@ export function QuestionContent({ blocks, importId, administrative = false, term
   const display = blocks.map((block) => {
     if (block.type === "paragraph") {
       const text = <SearchHighlight text={block.text} terms={terms} />;
+      if (block.style === "ordered_list" || block.style === "unordered_list") {
+        const List = block.style === "ordered_list" ? "ol" : "ul";
+        return <List key={block.id} className={block.style === "ordered_list" ? "list-decimal pl-6" : "list-disc pl-6"}>
+          {block.text.split("\n").filter(Boolean).map((item, index) => <li key={index}><SearchHighlight text={item} terms={terms} /></li>)}
+        </List>;
+      }
       if (block.style === "heading") return <h3 key={block.id} className="font-semibold">{text}</h3>;
       if (block.style === "passage" || block.style === "quote") return <blockquote key={block.id} className="my-3 whitespace-pre-wrap border-l-2 pl-4">{text}</blockquote>;
       if (block.style === "code") return <pre key={block.id} className="my-3 overflow-x-auto rounded-md border bg-muted p-4 text-sm"><code>{text}</code></pre>;
@@ -59,12 +65,28 @@ export function QuestionContent({ blocks, importId, administrative = false, term
         <dd className="whitespace-pre-line"><SearchHighlight text={text} terms={terms} /></dd>
       </div>)}
     </dl>;
-    if (block.type === "table") return <div key={block.id} className="question-table rounded-md border border-border">
-      <Table aria-label={`Question table from page ${block.page}`}>
-        <TableHeader><TableRow>{block.headers.map((header, index) => <TableHead scope="col" key={index} className="whitespace-normal"><SearchHighlight text={header} terms={terms} /></TableHead>)}</TableRow></TableHeader>
-        <TableBody>{block.rows.map((row, index) => <TableRow key={index}>{row.map((cell, col) => <TableCell key={col} className={block.headers[col] ? "align-top whitespace-normal" : "table-marker align-top"}><SearchHighlight text={cell} terms={terms} /></TableCell>)}</TableRow>)}</TableBody>
-      </Table>
-    </div>;
+    if (block.type === "image") return <img className="max-w-full rounded-md border" key={block.id} src={block.data} alt={block.alt} loading="lazy" />;
+    if (block.type === "table") {
+      const row = (cells: string[], index: number) => <TableRow key={index}>{cells.map((cell, col) => {
+        const span = tableCellSpan(block.spans, index, col);
+        if (!span) return null;
+        const Cell = index === 0 ? TableHead : TableCell;
+        return <Cell key={col} {...(index === 0 ? { scope: span.colSpan > 1 ? "colgroup" : "col" } : {})}
+          rowSpan={span.rowSpan > 1 ? span.rowSpan : undefined} colSpan={span.colSpan > 1 ? span.colSpan : undefined}
+          className={index > 0 && !block.headers[col] && !block.spans?.length ? "table-marker align-top" : "align-top whitespace-normal"}>
+          <SearchHighlight text={cell} terms={terms} />
+        </Cell>;
+      })}</TableRow>;
+      if (block.spans?.some((span) => span.row === 0 && span.rowSpan > 1)) return <div key={block.id} className="question-table rounded-md border border-border">
+        <Table aria-label={`Question table from page ${block.page}`}><TableBody>{row(block.headers, 0)}{block.rows.map((cells, index) => row(cells, index + 1))}</TableBody></Table>
+      </div>;
+      return <div key={block.id} className="question-table rounded-md border border-border">
+        <Table aria-label={`Question table from page ${block.page}`}>
+          <TableHeader>{row(block.headers, 0)}</TableHeader>
+          <TableBody>{block.rows.map((cells, index) => row(cells, index + 1))}</TableBody>
+        </Table>
+      </div>;
+    }
     if (block.type !== "source_crop") return <p key={String((block as { id?: string }).id)} role="status">This content format needs a newer viewer.</p>;
     if (!importId) return null;
     const access = administrative ? "?admin=1" : testSessionId ? `?test=${encodeURIComponent(testSessionId)}` : "";

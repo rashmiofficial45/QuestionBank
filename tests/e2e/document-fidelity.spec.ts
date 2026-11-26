@@ -160,12 +160,15 @@ test("renders interactive cards in both themes, including structured tables and 
   if (capture) await page.screenshot({ path: join(capture, "recent-test-scores.png") });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
-  page.once("dialog", (dialog) => dialog.dismiss());
   await scores.getByRole("button", { name: "Delete review" }).click();
+  const deleteReview = page.getByRole("alertdialog", { name: "Delete this test review?" });
+  await expect(deleteReview.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await deleteReview.getByRole("button", { name: "Cancel" }).click();
   await expect(scores).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
   await scores.getByRole("button", { name: "Delete review" }).click();
+  await deleteReview.getByRole("button", { name: "Delete review" }).click();
   await expect(page.getByText("Finished tests will appear here.")).toBeVisible();
+  await expect(page.getByText("Test review deleted.")).toBeVisible();
   expect((await page.request.get(reviewUrl)).status()).toBe(404);
   await page.getByRole("link", { name: "Progress", exact: true }).click();
   await expect(page.getByRole("table", { name: "Recent attempts" })).toBeVisible();

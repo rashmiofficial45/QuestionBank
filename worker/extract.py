@@ -7,13 +7,18 @@ from contextlib import nullcontext
 import pymupdf as pdf
 from pydantic import BaseModel
 
-from document_layout import analyze_page, center, read_scanned_columns
+from document_layout import analyze_page, center, Layout, read_scanned_columns
+from layout_cache import page_layout
 
 
 QUESTION = re.compile(r"^(\d{1,3})[.)](?:\s+|$)(.*)$")
 OCR_QUESTION = re.compile(r"^(\d{1,3})[,.:)](?:\s+|$)(.*)$")
 OPTION = re.compile(r"^\(([A-Za-z])\)\s*(.*)$")
-GENERIC_OPTION = re.compile(r"^(?:\(([A-Za-z])\)\s*|([A-Za-z])[.)](?:\s+|$))(.*)$")
+GENERIC_OPTION = re.compile(r"^(?:\(([A-Za-z0-9]{1,4})\)\s*|([A-Za-z0-9]{1,4})[.)](?:\s+|$))(.*)$")
+SECTION = re.compile(r"^(?:section|part)\s+([a-z]|[ivx]{1,4}|\d{1,2})(?:\s*[:.\-–]\s*.*)?$", re.I)
+BOOKLET = re.compile(r"^(?:Test\s+)?Booklet(?:\s+(?:Series|Code|Variant))?\s*[:–-]?\s+([A-Z0-9]{1,4})\s*$", re.I)
+OPTIONS_HEADING = re.compile(r"^(?:options|choices)\s*:?$", re.I)
+PASSAGE = re.compile(r"^(?:passage|comprehension)\s+(?:for questions|questions)\s+(\d{1,3})\s*[-–]\s*(\d{1,3})\s*:?\s*(.*)$", re.I)
 EXPLANATION = re.compile(r"^(?:Explanation\s+(\d{1,3})\s*:|(?:Question\s+)?(\d{1,3})[.)]\s+Explanation\s*:)\s*(.*)$", re.I)
 ANSWER_KEY_HEADING = re.compile(r"^answer\s+key\s*:?$", re.I)
 STATEMENT = re.compile(
@@ -64,11 +69,12 @@ def open_paper(path: Path):
     return doc
 
 
-def read_layouts(doc, label, stage, *, include_tables=True):
+def read_layouts(doc, label, stage, *, include_tables=True, checkpoint=None):
     layouts = []
     for page in doc:
         stage(f"Reading {label} page {page.number + 1} of {len(doc)}")
-        layouts.append(analyze_page(page, include_tables=include_tables))
+        layouts.append(page_layout(checkpoint, label.replace(" ", "-"), page.number,
+                                   lambda: analyze_page(page, include_tables=include_tables)))
     return layouts
 
 
@@ -82,14 +88,10 @@ def column_margins(page, layout):
     right = min((x for x in anchors if x >= midpoint), default=None)
     if left is None or right is None or right - left < page.rect.width * .32:
         return None
-    boundary = right - 8
-    left_lines = [box for box, _ in layout.lines if box.x0 < boundary]
-    if any(box.x1 > boundary for box in left_lines):
-        return None
     return left, right
 
 
-def read_lines(doc, layouts, polity, stage, columns):
+def read_lines(doc, layouts, polity, stage, columns, checkpoint):
     for page, layout in enumerate(layouts, start=1):
         split = 300 if polity else columns[page][1] - 8 if page in columns else None
         buckets = [[], []] if split is not None else [[]]
@@ -98,8 +100,17 @@ def read_lines(doc, layouts, polity, stage, columns):
         lines = layout.lines
         if polity and layout.scanned and not doc[page - 1].rotation:
             stage(f"Resolving OCR reading order on paper page {page} of {len(doc)}")
-            lines = read_scanned_columns(doc[page - 1])
+            lines = page_layout(checkpoint, "polity-columns", page,
+                                lambda: Layout(read_scanned_columns(doc[page - 1]), [], scanned=True)).lines
+        if split is not None and not polity:
+            lines = sorted(lines, key=lambda pair: (round(pair[0].y0, 1), pair[0].x0))
         for box, text in lines:
+            if split is not None and not polity and (box.x0 < split < box.x1 or SECTION.fullmatch(text)):
+                for bucket in buckets:
+                    yield from bucket
+                    bucket.clear()
+                yield Line(page, 0, box, text)
+                continue
             if polity and (box.y0 < 46 or box.y0 >= 795):
                 continue
             column = int(split is not None and box.x0 >= split)
@@ -108,10 +119,44 @@ def read_lines(doc, layouts, polity, stage, columns):
             yield from sorted(bucket, key=lambda line: (round(line.box.y0, 1), line.box.x0))
 
 
-def read_key(layouts):
+def special_option(value):
+    if value.isdecimal() and 1 <= int(value) <= 99:
+        return "numeric", int(value)
+    if value.upper() in ROMAN_ORDINALS:
+        return "roman", ROMAN_ORDINALS[value.upper()]
+    return None
+
+
+def booklet_labels(layouts):
+    return {marker[1].upper() for layout in layouts for _, text in layout.lines
+            if (marker := BOOKLET.fullmatch(text))}
+
+
+def read_key(layouts, booklet=None):
     answers = defaultdict(set)
+    section = ""
+    variants = booklet_labels(layouts)
+    current_booklet = None
+    if variants and booklet is None:
+        return answers
     for layout in layouts:
         for _, text in layout.lines:
+            if marker := BOOKLET.fullmatch(text):
+                current_booklet, section = marker[1].upper(), ""
+                continue
+            if variants and current_booklet != booklet:
+                continue
+            if marker := SECTION.fullmatch(text):
+                section = marker[1].casefold()
+                continue
+            row = re.fullmatch(r"(\d{1,3})[.) :–-]+(.+)", text)
+            if row:
+                value = row[2].strip().strip("()")
+                labels = [part.strip().strip("()").lower() for part in re.split(KEY_SEPARATOR, value)]
+                if all(special_option(label) for label in labels):
+                    choice = frozenset(labels)
+                    answers[(section, int(row[1]))].add(choice if len(choice) == len(labels) <= 12 else None)
+                    continue
             entries = list(KEY_START.finditer(text))
             for position, entry in enumerate(entries):
                 next_entry = entries[position + 1] if position + 1 < len(entries) else None
@@ -124,21 +169,31 @@ def read_key(layouts):
                 else:
                     labels = re.findall(r"\b[a-z]\b", value.lower()) if KEY_VALUE.fullmatch(value) else []
                 answer = frozenset(labels)
-                answers[int(entry[1])].add(answer if 1 <= len(labels) == len(answer) <= 12 else None)
+                answers[(section, int(entry[1]))].add(answer if 1 <= len(labels) == len(answer) <= 12 else None)
     return answers
 
 
-def read_explanations(path, stage):
+def read_explanations(path, stage, checkpoint):
     entries = defaultdict(list)
     current = None
     scanned = False
+    section = ""
+    numbered = False
     with open_paper(path) as doc:
-        for layout in read_layouts(doc, "explanations", stage, include_tables=False):
+        for layout in read_layouts(doc, "explanations", stage, include_tables=False, checkpoint=checkpoint):
             scanned |= layout.scanned
             for _, text in sorted(layout.lines, key=lambda line: (line[0].y0, line[0].x0)):
-                if marker := EXPLANATION.match(text):
+                if marker := SECTION.fullmatch(text):
+                    section, current = marker[1].casefold(), None
+                elif re.fullmatch(r"(?:answer\s+)?explanations\s*:?", text, re.I):
+                    numbered = True
+                    current = None
+                elif marker := EXPLANATION.match(text):
                     current = [marker[3]]
-                    entries[int(marker[1] or marker[2])].append(current)
+                    entries[(section, int(marker[1] or marker[2]))].append(current)
+                elif numbered and (marker := QUESTION.match(text)):
+                    current = [marker[2]]
+                    entries[(section, int(marker[1]))].append(current)
                 elif QUESTION.match(text):
                     current = None
                 elif current is not None:
@@ -227,6 +282,17 @@ def as_text(lines):
         )
         chunks.append(("\n" if paragraph else " ") + line.text)
     return "".join(chunks).strip()
+
+
+def source_regions(lines):
+    boxes = {}
+    for line in lines:
+        key = line.page, line.column
+        if key in boxes:
+            boxes[key].include_rect(line.box)
+        else:
+            boxes[key] = pdf.Rect(line.box)
+    return [dict(page=page, bounds=list(bounds)) for (page, _), bounds in boxes.items()]
 
 
 def crop_stem(doc, output, number, stem, images=None):
@@ -326,17 +392,18 @@ def build_blocks(stem, layouts):
             key, table = match
             emitted.add(key)
             blocks.append(dict(id=f"table-{key[0]}-{key[1] + 1}", type="table", page=line.page,
-                               bounds=list(table.box), headers=table.headers, rows=table.rows))
+                               bounds=list(table.box), headers=table.headers, rows=table.rows,
+                               **({"spans": table.spans} if table.spans else {})))
     flush()
     return blocks
 
 
-def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lambda _: None, *, explanation: Path | None = None):
+def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lambda _: None, *, explanation: Path | None = None, checkpoint: Path | None = None):
     stage("Reading paper layout and answer key")
     with open_paper(paper) as doc, (open_paper(key) if key else nullcontext()) as key_doc:
-        layouts = read_layouts(doc, "paper", stage)
+        layouts = read_layouts(doc, "paper", stage, checkpoint=checkpoint)
         if key_doc is not None:
-            key_layouts = read_layouts(key_doc, "answer key", stage, include_tables=False)
+            key_layouts = read_layouts(key_doc, "answer key", stage, include_tables=False, checkpoint=checkpoint)
         else:
             key_start = next((index for index, layout in enumerate(layouts)
                               if layout.lines and ANSWER_KEY_HEADING.fullmatch(layout.lines[0][1])), None)
@@ -351,12 +418,19 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             and "vajiram" in masthead.lower()
             and bool(re.search(r"polity\s*[-–]\s*pt\s*[-–]\s*01\b", masthead, re.I))
         )
-        answers = read_key(key_layouts)
+        paper_variants = booklet_labels(layouts)
+        key_variants = booklet_labels(key_layouts)
+        booklet = next(iter(paper_variants)) if len(paper_variants) == 1 else None
+        answers = read_key(key_layouts, booklet)
         page_images = {}
         for page, layout in zip(doc, layouts):
             if layout.scanned or page.rotation:
                 continue
             boxes = [pdf.Rect(item["bbox"]) for item in page.get_image_info()]
+            if not polity:
+                table_bounds = [table.box for table in layout.tables] + (layout.unresolved_tables or [])
+                boxes.extend(box for box in page.cluster_drawings(x_tolerance=8, y_tolerance=8)
+                             if not any(table.intersects(box) for table in table_bounds))
             page_images[page.number + 1] = [
                 box for box in boxes if box.width >= 32 and box.height >= 32 and box.get_area() < page.rect.get_area() * 0.7
             ]
@@ -366,32 +440,55 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             page.number + 1: margins for page, layout in zip(doc, layouts)
             if (margins := column_margins(page, layout))
         }
-        lines = list(read_lines(doc, layouts, polity, stage, columns))
+        lines = list(read_lines(doc, layouts, polity, stage, columns, checkpoint))
         if not lines:
             raise ValueError("No legible question text was recognized in this PDF.")
         if len(lines) > 25000:
             raise ValueError("Document exceeds the text-processing limit.")
-        left = min((line.box.x0 for line in lines if not line.column and (
-            OCR_QUESTION if layouts[line.page - 1].scanned else QUESTION
-        ).match(line.text)), default=0)
+        anchors = defaultdict(list)
         for line in lines:
+            marker = OCR_QUESTION if layouts[line.page - 1].scanned else QUESTION
+            if not line.column and marker.match(line.text):
+                anchors[line.page].append(line.box.x0)
+        left = min((x for margin in anchors.values() for x in margin), default=0)
+        page_left = {page: left if any(abs(x - left) <= 5 for x in margins) else min(margins)
+                     for page, margins in anchors.items()}
+        section = ""
+        passages = []
+        active_passage = None
+        for line in lines:
+            if not polity and BOOKLET.fullmatch(line.text):
+                continue
+            if not polity and (marker := SECTION.fullmatch(line.text)):
+                section, current, active_passage = marker[1].casefold(), None, None
+                continue
+            if not polity and (marker := PASSAGE.match(line.text)):
+                active_passage = (section, int(marker[1]), int(marker[2]), [marker[3]])
+                passages.append(active_passage)
+                current = None
+                continue
             pattern = OCR_QUESTION if layouts[line.page - 1].scanned else QUESTION
             match = pattern.match(line.text)
-            margin = (304 if line.column else 28) if polity else columns.get(line.page, (left,))[line.column]
+            margin = (304 if line.column else 28) if polity else columns.get(line.page, (page_left.get(line.page, left),))[line.column]
             if match and abs(line.box.x0 - margin) <= 5:
-                current = (int(match[1]), line.page, [])
+                current = ((section, int(match[1])), line.page, [])
+                active_passage = None
                 segments.append(current)
                 if match[2]:
                     current[2].append(Line(line.page, line.column, line.box, match[2]))
             elif current:
                 current[2].append(line)
+            elif active_passage is not None:
+                active_passage[3].append(line.text)
         if not segments:
             raise ValueError("No numbered questions were found in a supported layout.")
         numbering = [number for number, _, _ in segments]
         if len(numbering) != len(set(numbering)):
             raise ValueError("Repeated question numbers made the source ambiguous.")
         global_issues = []
-        if numbering != sorted(answers):
+        if key_variants and booklet not in key_variants:
+            global_issues.append("The answer key booklet could not be matched to the question paper.")
+        if set(numbering) != set(answers):
             global_issues.append("Question numbering and the answer key differ. Verify the paper against the source.")
         if not polity:
             global_issues.append("Layout has no verified profile. Compare the draft with the source before publishing.")
@@ -400,7 +497,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
         explanations = {}
         if explanation:
             try:
-                explanations, scanned_explanations = read_explanations(explanation, stage)
+                explanations, scanned_explanations = read_explanations(explanation, stage, checkpoint)
                 if scanned_explanations:
                     global_issues.append("Explanations were read using OCR. Verify the imported text against its source.")
                 if not explanations or explanations.keys() - set(numbering):
@@ -409,14 +506,34 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
                 global_issues.append("The optional explanation PDF could not be read. Compare it with the drafts before publishing.")
         stage("Mapping answers and validating drafts")
         items = []
-        for segment_index, (number, page, content) in enumerate(segments):
+        renumber = len({number for _, number in numbering}) != len(numbering)
+        for segment_index, (source, page, content) in enumerate(segments):
+            section, original_number = source
+            number = segment_index + 1 if renumber else original_number
             stem = []
             options = []
+            option_kind = None
+            explicit_options = False
             for line in content:
+                if not polity and OPTIONS_HEADING.fullmatch(line.text):
+                    explicit_options = True
+                    continue
                 marker = (OPTION if polity else GENERIC_OPTION).match(line.text)
                 option_margin = (328 if line.column else 52) if polity else None
-                if marker and not polity and not options and (marker[1] or marker[2]).upper() in ROMAN_ORDINALS:
-                    marker = None
+                if marker and not polity:
+                    label = marker[1] or marker[2]
+                    special = special_option(label)
+                    if special and (option_kind in ("numeric", "roman") or not options):
+                        kind, ordinal = special
+                        indented = line.box.x0 > (content[0].box.x0 + 4)
+                        if ordinal != len(options) + 1 or (not options and not (explicit_options or indented or (kind == "numeric" and marker[1]))):
+                            marker = None
+                        elif option_kind is None:
+                            option_kind = kind
+                    elif len(label) != 1 or option_kind in ("numeric", "roman"):
+                        marker = None
+                    else:
+                        option_kind = "alphabetic"
                 if marker and (option_margin is None or abs(line.box.x0 - option_margin) <= 5):
                     letter, text = (marker[1], marker[2]) if polity else (marker[1] or marker[2], marker[3])
                     options.append((letter.lower(), [Line(line.page, line.column, line.box, text)]))
@@ -441,7 +558,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             option_ids = {option["id"] for option in choices}
             boolean_options = {option["text"].strip().lower(): option["id"] for option in choices}
             is_boolean = len(choices) == len(option_ids) == 2 and boolean_options.keys() == {"true", "false"}
-            candidates = answers[number]
+            candidates = answers[source]
             if is_boolean:
                 candidates = {
                     frozenset(boolean_options.get(label, label) for label in candidate) if candidate else None
@@ -452,7 +569,7 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             answer = None
             issues = list(global_issues)
             explanation_text = ""
-            if entries := explanations.get(number):
+            if entries := explanations.get(source):
                 text = "\n".join(entries[0]).strip()
                 if len(entries) == 1 and 0 < len(text) <= 8000:
                     explanation_text = text
@@ -487,20 +604,38 @@ def extract(paper: Path, key: Path | None, output: Path | None = None, stage=lam
             if not as_text(stem):
                 issues.append("Question text is missing.")
             blocks = build_blocks(stem, layouts)
+            for group, first, last, parts in passages:
+                if group == section and first <= original_number <= last and (text := "\n".join(parts).strip()):
+                    blocks.insert(0, dict(id="shared-passage", type="paragraph", style="passage", text=text))
+                    break
             blocks = [part for block in blocks for part in structure_assertion_reason(block)]
             blocks = [part for block in blocks for part in structure_statements(block)]
             structured = any(block["type"] == "table" for block in blocks)
             images = embedded_prompt_images(stem, options, page_images, polity)
-            unresolved = any(inside_table(line, box) for line in stem
-                             for box in layouts[line.page - 1].unresolved_tables or [])
+            visual_regions = defaultdict(list, images)
+            unresolved = False
+            for line in stem:
+                layout = layouts[line.page - 1]
+                for box in layout.unresolved_tables or []:
+                    if inside_table(line, box):
+                        unresolved = True
+                        visual_regions[(line.page, line.column)].append(box)
+                for table in layout.tables:
+                    if inside_table(line, table.box):
+                        visual_regions[(line.page, line.column)].append(table.box)
             if unresolved or (polity and number in POLITY_TABLES and not structured):
                 issues.append("A table could not be structured safely. Compare the original layout before publishing.")
-            if stem and (images or structured or unresolved or inferred_columns or (polity and number in POLITY_TABLES) or any(layout.scanned for layout in page_layouts)):
-                crops = crop_stem(doc, output, number, stem, images)
-                if not images and not unresolved and (structured or inferred_columns or any(layout.scanned for layout in page_layouts)):
+            visual_math = not polity and any(re.search(r"[∫∑√≈≠≤≥]", line.text) for line in stem)
+            if visual_math:
+                issues.append("Check mathematical notation against the original PDF region.")
+            if stem and (images or visual_math or structured or unresolved or inferred_columns or (polity and number in POLITY_TABLES) or any(layout.scanned for layout in page_layouts)):
+                crops = crop_stem(doc, output, number, stem, visual_regions)
+                if not images and not visual_math and not unresolved and (structured or inferred_columns or any(layout.scanned for layout in page_layouts)):
                     for crop in crops:
                         crop["reference"] = True
                 blocks.extend(crops)
             items.append((number, page, dict(version=1, interaction=interaction, blocks=blocks,
-                                              options=choices, answer=answer, explanation=explanation_text), issues))
+                                              options=choices, answer=answer, explanation=explanation_text,
+                                              sourceRegions=source_regions(content),
+                                              **({"sourceLabel": f"Section {section.upper()} · Question {original_number}"} if section else {})), issues))
         return items

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { db } from "@/database";
-import { practiceSessions, questions, questionVersions } from "@/database/schema";
+import { practiceSessions, questions, questionVersions, studyDrills } from "@/database/schema";
 import { adminEnabled, getImport, storageRoot } from "@/modules/imports";
 import { activeQuestion, getProfile } from "@/modules/study";
 
@@ -35,6 +35,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             where ${practiceSessions.id} = ${session.data}
               and ${practiceSessions.profileId} = ${owner}
               and ${practiceSessions.manifest} @> jsonb_build_array(jsonb_build_object(
+                'id', ${questionVersions.questionId}, 'revision', ${questionVersions.revision}
+              ))
+            union all
+            select 1 from ${studyDrills}
+            where ${studyDrills.id} = ${session.data}
+              and ${studyDrills.profileId} = ${owner}
+              and ${studyDrills.manifest} @> jsonb_build_array(jsonb_build_object(
                 'id', ${questionVersions.questionId}, 'revision', ${questionVersions.revision}
               ))
           )`)).limit(1);

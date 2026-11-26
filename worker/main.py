@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -58,8 +59,15 @@ def process(conn, job):
         artifacts.mkdir(mode=0o700, exist_ok=True)
         explanation = folder / "explanations.pdf"
         key = folder / "key.pdf"
+        fingerprints = hashlib.sha256()
+        for source in [folder / "paper.pdf", key, explanation]:
+            fingerprints.update(source.name.encode())
+            if source.is_file():
+                with source.open("rb") as handle:
+                    fingerprints.update(hashlib.file_digest(handle, "sha256").digest())
+        checkpoint = folder / "page-checkpoints" / fingerprints.hexdigest()
         items = extract(folder / "paper.pdf", key if key.is_file() else None, artifacts, stage,
-                        explanation=explanation if explanation.is_file() else None)
+                        explanation=explanation if explanation.is_file() else None, checkpoint=checkpoint)
         with conn.transaction():
             confirmed = conn.execute("""
                 update paper_imports set status='ready', stage='Drafts ready', error=null, lease_until=null

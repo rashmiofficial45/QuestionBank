@@ -104,27 +104,12 @@ export async function saveDraft(importId: string, id: string, generation: number
     const sequence = ranked ? String(form.get("sequence") ?? "").split(",").map((label) =>
       optionInputs.data.find((option) => option.label.toLowerCase() === label.trim().toLowerCase())?.id ?? ""
     ) : [];
+    let blocks: unknown;
+    try { blocks = JSON.parse(String(form.get("blocks"))); }
+    catch { return { error: "The question blocks could not be read." }; }
     const content = questionSchema.safeParse({
       ...draft.content,
-      blocks: draft.content.blocks.map((block) => {
-        if (block.type === "paragraph") return {
-          ...block, text: form.get(`stem-${block.id}`),
-          style: (form.get(`style-${block.id}`) ?? block.style) || undefined,
-        };
-        if (block.type === "assertion_reason") return {
-          ...block,
-          assertion: { ...block.assertion, text: form.get(`assertion-${block.id}`) },
-          reason: { ...block.reason, text: form.get(`reason-${block.id}`) },
-        };
-        if (block.type === "statements") return { ...block, items: block.items.map((item, position) => ({
-          ...item, text: form.get(`statement-${block.id}-${position}`),
-        })) };
-        if (block.type !== "table") return block;
-        return { ...block,
-          headers: block.headers.map((_, col) => form.get(`cell-${block.id}-header-${col}`)),
-          rows: block.rows.map((row, index) => row.map((_, col) => form.get(`cell-${block.id}-${index}-${col}`))),
-        };
-      }),
+      blocks,
       options: optionInputs.data,
       interaction,
       presentation: (form.get("presentation") ?? draft.content.presentation) || undefined,
@@ -132,11 +117,12 @@ export async function saveDraft(importId: string, id: string, generation: number
       prompts: interaction === "pair_matching" ? String(form.get("prompts") ?? "").split("\n").map((line) => line.trim()).filter(Boolean) : undefined,
       explanation: form.get("explanation"),
     });
-    if (!content.success) return { error: "Provide question text and a value for every option." };
-    if (draft.content.blocks.some((block) => block.type === "source_crop" && !block.reference) && JSON.stringify(content.data.blocks) !== JSON.stringify(questionSchema.parse(draft.content).blocks)) {
-      return { error: "This prompt includes a source image. Its text stays linked to that image in this preview." };
+    if (!content.success) return { error: "Check question text, image descriptions, merged cells, and answer options." };
+    const sourceCrops = new Set(draft.content.blocks.filter((block) => block.type === "source_crop").map((block) => `${block.page}:${block.file}`));
+    if (content.data.blocks.some((block) => block.type === "source_crop" && !sourceCrops.has(`${block.page}:${block.file}`))) {
+      return { error: "Source crops must belong to this question." };
     }
-    const issues = form.get("verified") === "on" ? [] : draft.issues;
+    const issues = form.get("save-mode") !== "automatic" && form.get("verified") === "on" ? [] : draft.issues;
     await tx.update(drafts).set({ ...metadata.data, tags: [...new Set(metadata.data.tags)], content: content.data, issues,
       generation: draft.generation + 1, editedAt: new Date() }).where(eq(drafts.id, id));
     await tx.insert(editorialEvents).values({ importId, questionNumber: draft.number, type: "Draft saved",
@@ -237,4 +223,21 @@ export async function retryImport(importId: string) {
     if (retried) await tx.insert(editorialEvents).values({ importId, type: "Retry queued", detail: "Reused the stored question paper and answer key." });
   });
   revalidatePath(`/admin/imports/${importId}`);
+}
+
+export async function restoreOriginal(importId: string, draftId: string, generation: number) {
+  await requireAdmin();
+  if (![importId, draftId].every((id) => z.uuid().safeParse(id).success)) return;
+  const restored = await db.transaction(async (tx) => {
+    const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, draftId), eq(drafts.importId, importId))).for("update");
+    if (!draft || draft.generation !== generation) return null;
+    await tx.update(drafts).set({ content: draft.original,
+      issues: draft.page > 0 ? ["Verify the restored extraction against the source before publishing."] : [],
+      generation: generation + 1, editedAt: new Date() }).where(eq(drafts.id, draft.id));
+    await tx.insert(editorialEvents).values({ importId, questionNumber: draft.number, type: "Source restored", detail: "Copied the original content into the draft." });
+    return draft.number;
+  });
+  if (restored === null) redirect(`/admin/imports/${importId}?mode=history&stale=1`);
+  revalidatePath(`/admin/imports/${importId}`);
+  redirect(`/admin/imports/${importId}?mode=edit&q=${restored}`);
 }

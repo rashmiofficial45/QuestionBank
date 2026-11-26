@@ -51,11 +51,11 @@ The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf` and `Test-
 
 ## MVP coverage
 
-The Polity parser handles the sample paper's known two-column layout and renders all nine tables as structured HTML, with links to the original PDF crops. The worker uses word coordinates to map cell text to rules from the native PDF or from the page raster. English scanned question papers and answer keys use Tesseract and require editorial source verification before publishing. Reviewers can open the separate answer key and edit individual cells, prompt text, answers, and optional explanations. The browser uses its native viewer for the full PDF.
+The Polity parser handles the sample paper's known two-column layout and renders all nine tables as structured HTML, with links to the original PDF crops. The worker uses word coordinates to map cell text to rules from the native PDF or from the page raster. English scanned question papers and answer keys use Tesseract and require editorial source verification before publishing. Reviewers can open the separate answer key and edit individual cells, prompt text, answers, and optional explanations. The editorial workspace uses a local PDF.js viewer with page navigation, zoom, and source highlighting. The original PDF can also be opened directly.
 
 The editor covers rectangular tables. Detected ambiguous or merged grids keep their source crops and a review flag. Scan clarity, table ruling, document rotation, and unfamiliar layouts can affect recognition. For an existing import with untouched source blocks, `worker/refresh_tables.py IMPORT_ID` upgrades verified table layouts while retaining question IDs, answers, edits to other fields, and attempts.
 
-For layouts without a verified profile, the worker can infer two columns when it finds numbered questions on either side of a clear gutter. Those drafts include the source crop and a verification flag. The parser also recognizes plain alphabetic labels like `A.` and `B)` in addition to parenthesized labels. Ambiguous reading order, merged tables, numeric or Roman option auto-detection, and diagram interpretation still require source inspection.
+For layouts without a verified profile, the worker infers reading order from numbered question anchors, including mixed-width pages and questions continuing to another page. Those drafts include the source crop and a verification flag. The parser also recognizes plain alphabetic labels like `A.` and `B)` in addition to parenthesized labels. Numeric and Roman choices are recognized when the source has clear markers. Merged cells are retained when the source geometry describes a complete, non-overlapping grid. Ambiguous layouts, unruled tables, and diagram interpretation require source inspection.
 
 Choice questions can retain embedded source images found between option markers. Review each image against the source before publication. In **Edit**, turn on **Render option as LaTeX** to render the option's text as an equation. Image and equation choices keep their original option identifiers and grade in both the question bank and timed practice. Imported and manually entered explanations are revealed after checking an answer or in a submitted test review.
 
@@ -69,13 +69,20 @@ Statement-based questions keep consecutive numbered or Roman-numeral statements 
 
 Assertion–Reason questions imported with explicit Assertion and Reason labels on separate lines display the two parts separately. Editors can update each part and learners can find the format in the question bank. Grading follows the answer key and options from the source. Prompts without a recognizable pair retain their original text.
 
-Submission opens Test ended with earned and total marks, accuracy, time taken, and a topic breakdown. Review answers opens the original questions and a table of selections, correct answers, and outcomes. Exit test returns to the practice setup and the most recent 20 scores. Deleting a review removes that test from the score table and keeps its individual attempts in Progress.
+Submission opens Test ended with earned and total marks, accuracy, time taken, and a topic breakdown. Review answers opens the original questions and a table of selections, correct answers, and outcomes. Exit test returns to the practice setup and the most recent 20 scores. Deleting a timed review removes that test from the score table and keeps its individual attempts in Progress. Untimed practice sets can be filtered by subject, topic, and difficulty, resumed, and reviewed after completion. Use **Mark for revision** to retain a question in Revision independently of its latest answer.
 
 The default test uses 60 minutes and two marks per correct answer, with one-third of the marks deducted for an incorrect answer. The setup form can change those settings. Progress distinguishes test attempts from question-bank activity and shows performance by subject and topic. Revision lists questions whose latest attempt was incorrect. A correct retry clears the question from the queue.
 
 The interface uses shadcn/ui with White and Black themes and semantic answer feedback. An explanation appears after grading when the saved question includes one.
 
 ## Editorial workflow
+
+In **PDF imports**, use **Create question** or **Import CSV or JSON** to stage drafts without a PDF. CSV accepts `question,option_a,option_b,answer,explanation`; number and classification columns are optional. Export an import to see the structured CSV and JSON formats. Exports embed source images up to 1 MB each; missing or larger images return an explicit error. Imports accept up to 1,000 questions and 5 MB per file.
+
+Use **Settings** to manage classification suggestions and default timed-test settings. **Review duplicates** groups exact normalized prompts and choices. Excluding a duplicate keeps its draft and archives any published version.
+
+The draft editor supports adding, moving, and removing blocks, including text styles, tables, and PNG or JPEG images. It backs up unsaved edits in the browser. Enable **Autosave valid drafts** to write them to PostgreSQL. **History** can restore the original content or a published revision. Editorial verification and publication remain explicit.
+
 
 Edit a published question to prepare a draft revision. Publishing creates an immutable version and updates the student bank. Previous versions keep their original answers and options, including for someone already taking a test. Editors can reorder or add options, edit the classification, publish selected questions, archive or unarchive a published question, and restore a previous version to a draft. Import history includes changes and failed uploads can be retried from their stored PDFs.
 

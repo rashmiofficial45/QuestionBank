@@ -1,0 +1,4 @@
+CREATE TABLE "editorial_settings" (
+	"key" text PRIMARY KEY NOT NULL,
+	"value" jsonb NOT NULL
+);

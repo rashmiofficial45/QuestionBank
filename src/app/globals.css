@@ -183,6 +183,9 @@ h2 { font-size: 20px; font-weight: 665; letter-spacing: -.035em; }
 .upload-form .field input[type=file] { height: 50px; padding: 7px; border-color: var(--input); line-height: 34px; cursor: pointer; }
 .upload-form .field input[type=file]::file-selector-button { height: 34px; margin-inline-end: 12px; padding-inline: 12px; border: 1px solid var(--primary); border-radius: 5px; background: var(--primary); color: var(--primary-foreground); vertical-align: top; cursor: pointer; }
 .upload-form .field input[type=file]:hover::file-selector-button { opacity: .9; }
+.pdf-file-control { position: relative; min-width: 0; }
+.upload-form .field .pdf-file-control[data-selected] input { padding-inline-end: 48px; }
+.pdf-file-clear { position: absolute; inset-inline-end: 8px; top: 50%; translate: 0 -50%; }
 .field textarea { resize: vertical; }
 .field-grid { display: grid; gap: 13px; grid-template-columns: 1fr 1fr; }
 .notice { margin: 9px 0 14px; padding: 11px 13px; border-radius: 8px; background: var(--tint); color: var(--accent); }

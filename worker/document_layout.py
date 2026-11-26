@@ -22,6 +22,7 @@ class DetectedTable:
     box: pdf.Rect
     headers: list[str]
     rows: list[list[str]]
+    spans: list[dict] | None = None
 
 
 @dataclass
@@ -143,9 +144,33 @@ def raster_grids(cells):
             continue
         grid = [[(x0, y0, x1, y1) for x0, x1 in zip(xs, xs[1:])] for y0, y1 in zip(ys, ys[1:])]
         if {cell for row in grid for cell in row} != {tuple(rect) for rect in group}:
-            yield bounds, []
+            yield bounds, [[tuple(rect) for rect in group]]
         else:
             yield bounds, grid
+
+
+def merged_grid(physical):
+    xs = sorted({round(value, 2) for cell in physical for value in (cell[0], cell[2])})
+    ys = sorted({round(value, 2) for cell in physical for value in (cell[1], cell[3])})
+    if not 3 <= len(xs) <= 13 or not 3 <= len(ys) <= 41:
+        return None
+    grid = [[None] * (len(xs) - 1) for _ in ys[:-1]]
+    occupied = set()
+    spans = []
+    for cell in physical:
+        x0, y0, x1, y1 = (round(value, 2) for value in cell)
+        col, row = xs.index(x0), ys.index(y0)
+        columns, rows = xs.index(x1) - col, ys.index(y1) - row
+        covered = {(y, x) for y in range(row, row + rows) for x in range(col, col + columns)}
+        if not covered or occupied & covered:
+            return None
+        occupied.update(covered)
+        grid[row][col] = cell
+        if rows > 1 or columns > 1:
+            spans.append(dict(row=row, column=col, rowSpan=rows, colSpan=columns))
+    if len(occupied) != len(grid) * len(grid[0]):
+        return None
+    return grid, spans
 
 
 def read_tables(page, words, add_lines=None):
@@ -157,15 +182,23 @@ def read_tables(page, words, add_lines=None):
     )
     tables, unresolved = [], []
     for bounds, grid in grids:
-        if not 2 <= len(grid) <= 40 or not 2 <= len(grid[0]) <= 12 or any(
-            cell is None for row in grid for cell in row
-        ):
+        spans = None
+        if len(grid) == 1 or any(cell is None for row in grid for cell in row):
+            merged = merged_grid([cell for row in grid for cell in row if cell is not None])
+            if merged is None:
+                unresolved.append(bounds)
+                continue
+            grid, spans = merged
+        if not 2 <= len(grid) <= 40 or not 2 <= len(grid[0]) <= 12:
             unresolved.append(bounds)
             continue
         rows = []
         for row in grid:
             cells = []
             for cell in row:
+                if cell is None:
+                    cells.append("")
+                    continue
                 rect = pdf.Rect(cell)
                 tokens = sorted((word for word in words if rect.contains(center(word.box))), key=lambda word: center(word.box).y)
                 lines = []
@@ -177,10 +210,10 @@ def read_tables(page, words, add_lines=None):
                         lines.append((y, [token]))
                 cells.append(" ".join(token.text for _, line in lines for token in sorted(line, key=lambda word: word.box.x0)))
             rows.append(cells)
-        if sum(bool(value) for value in rows[0]) < 2 or any(sum(bool(value) for value in row) < 2 for row in rows[1:]):
+        if not spans and (sum(bool(value) for value in rows[0]) < 2 or any(sum(bool(value) for value in row) < 2 for row in rows[1:])):
             unresolved.append(bounds)
             continue
-        tables.append(DetectedTable(bounds, rows[0], rows[1:]))
+        tables.append(DetectedTable(bounds, rows[0], rows[1:], spans))
     return tables, unresolved
 
 
@@ -198,6 +231,9 @@ def analyze_page(page, include_tables=True):
         return Layout(lines, tables, unresolved_tables=unresolved)
     pixmap, transform, groups = scan_page(page, 3)
     lines = scan_lines(groups.values())
+    if not lines:
+        pixmap, transform, groups = scan_page(page, 11)
+        lines = scan_lines(groups.values())
     if not include_tables and not any(re.search(r"\b\d{1,3}[.) :–-]+\(?[A-Za-z]\)?(?:\s|$)", text) for _, text in lines):
         # Small keys consisting of a single line may need uniform-block segmentation.
         pixmap, transform, groups = scan_page(page, 6)

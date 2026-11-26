@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { restoreRevision, setArchived } from "@/app/admin/actions";
+import { restoreOriginal, restoreRevision, setArchived } from "@/app/admin/actions";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { importActivity, versionHistory } from "@/modules/imports";
@@ -16,6 +16,9 @@ export async function EditorialHistory({ importId, draft, stale }: {
     <section className="panel bank-panel admin-section">
       <h2>Revision history{draft ? ` for question ${draft.number}` : ""}</h2>
       {stale && <p role="alert" className="form-error">The draft changed. Review the latest state before restoring a revision.</p>}
+      {draft && <form className="form-actions" action={restoreOriginal.bind(null, importId, draft.id, draft.generation)}>
+        <Button type="submit" variant="outline">Restore original content to draft</Button>
+      </form>}
       {!versions.length && <p className="empty">Published versions will appear here.</p>}
       {draft && versions.length > 0 && <>
         <div className="form-actions">

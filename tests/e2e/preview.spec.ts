@@ -26,6 +26,12 @@ test("Polity PDFs can be reviewed and published, then searched and practiced", a
   await page.getByRole("link", { name: "Review", exact: true }).click();
   await page.getByRole("link", { name: "Question 6", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Question 6", exact: true })).toBeVisible();
+  const canvas = page.locator('canvas[aria-label^="Original paper"]');
+  await expect.poll(() => canvas.evaluate((element: HTMLCanvasElement) =>
+    element.width > 300 && element.getContext("2d")!.getImageData(0, 0, 1, 1).data[3] === 255)).toBe(true);
+  const before = await canvas.evaluate((element: HTMLCanvasElement) => element.getBoundingClientRect().width);
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect.poll(() => canvas.evaluate((element: HTMLCanvasElement) => element.getBoundingClientRect().width)).toBeGreaterThan(before);
   await expect(page.getByRole("table", { name: /question table from page/i })).toBeVisible();
   await expect(page.getByRole("cell", { name: "House Committee", exact: true })).toBeVisible();
   await page.getByText("Original PDF crop", { exact: true }).click();
