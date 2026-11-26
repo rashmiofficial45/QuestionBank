@@ -1,6 +1,7 @@
 import { and, desc, eq, getTableColumns } from "drizzle-orm";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
+import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { db } from "@/database";
 import { drafts, editorialEvents, imports, questions, questionVersions } from "@/database/schema";
@@ -16,6 +17,10 @@ export async function requireAdmin() {
 }
 
 export const storageRoot = () => resolve(process.env.STORAGE_DIR ?? ".data");
+
+export async function hasExplanationPDF(id: string) {
+  return stat(resolve(storageRoot(), id, "explanations.pdf")).then((file) => file.isFile(), () => false);
+}
 
 export function recentImports() {
   return db.select().from(imports).orderBy(desc(imports.createdAt)).limit(100);

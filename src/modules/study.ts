@@ -15,7 +15,13 @@ export async function getProfile(create = false) {
   if (current.success) return current.data;
   if (!create) return null;
   const id = crypto.randomUUID();
-  jar.set(profileName, id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
+  jar.set(profileName, id, {
+    httpOnly: true,
+    secure: process.env.STUDY_COOKIE_SECURE === "1",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
   return id;
 }
 

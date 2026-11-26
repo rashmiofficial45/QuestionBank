@@ -56,7 +56,10 @@ def process(conn, job):
         # Each claim writes images to a unique directory. A stale claim cannot overwrite the winning artifacts.
         artifacts = folder / str(token)
         artifacts.mkdir(mode=0o700, exist_ok=True)
-        items = extract(folder / "paper.pdf", folder / "key.pdf", artifacts, stage)
+        explanation = folder / "explanations.pdf"
+        key = folder / "key.pdf"
+        items = extract(folder / "paper.pdf", key if key.is_file() else None, artifacts, stage,
+                        explanation=explanation if explanation.is_file() else None)
         with conn.transaction():
             confirmed = conn.execute("""
                 update paper_imports set status='ready', stage='Drafts ready', error=null, lease_until=null

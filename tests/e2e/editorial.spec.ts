@@ -1,5 +1,72 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
+import { checkAccessibility } from "./verify-accessibility";
+
+test("stages a combined question paper with its own numbered answer key", async ({ page }) => {
+  const fixture = process.env.RICH_OPTIONS_FIXTURE_DIR;
+  test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use the dedicated editorial database and combined PDF fixture.");
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(`Combined PDF verification ${Date.now()}`);
+  await page.getByLabel("Subject").fill("General");
+  await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "combined.pdf"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
+  await page.getByRole("link", { name: "Review", exact: true }).click();
+  await expect(page.getByText(/answer key came from the combined PDF/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open answer key" })).toHaveCount(0);
+  await expect(page.getByLabel("Correct answer")).toBeVisible();
+});
+
+test("publishes rich choices and reveals the imported explanation after answering", async ({ page }) => {
+  const fixture = process.env.RICH_OPTIONS_FIXTURE_DIR;
+  test.skip(!fixture || process.env.EDITORIAL_TEST_DATABASE !== "1", "Use the dedicated editorial database and rich-option PDFs.");
+  const title = `Rich option verification ${Date.now()}`;
+  const explanation = "A circle has a curved boundary.";
+  await page.goto("/admin/imports/new");
+  await page.getByLabel("Paper title").fill(title);
+  await page.getByLabel("Subject").fill("General");
+  await page.getByLabel("Question paper PDF").setInputFiles(join(fixture!, "paper.pdf"));
+  await page.getByLabel("Answer key PDF").setInputFiles(join(fixture!, "key.pdf"));
+  await page.getByLabel("Explanation PDF").setInputFiles(join(fixture!, "explanations.pdf"));
+  await page.getByRole("button", { name: "Upload and process" }).click();
+  await expect(page.getByText(/1 extracted.*1 flagged/)).toBeVisible({ timeout: 35_000 });
+  const imported = page.url();
+  await page.goto(`${imported}?mode=review&q=1`);
+  const source = page.getByRole("img", { name: /source image 1 for option 1/i });
+  await expect(source).toBeVisible();
+  const image = new URL(await source.getAttribute("src") ?? "", page.url());
+  expect((await page.request.get(image.toString())).ok()).toBe(true);
+  image.search = "";
+  expect((await page.request.get(image.toString())).status()).toBe(404);
+  await expect(page.getByRole("link", { name: "Open explanation PDF" })).toBeVisible();
+  await page.goto(`${imported}?mode=edit&q=1`);
+  await expect(page.getByRole("textbox", { name: "Explanation" })).toHaveValue(explanation);
+  await page.getByRole("textbox", { name: "Option B", exact: true }).fill("x^2");
+  await page.getByRole("checkbox", { name: "Render option B as LaTeX" }).check();
+  await page.getByRole("checkbox", { name: /verified this draft/ }).check();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Draft saved.")).toBeVisible();
+  await page.goto(`${imported}?mode=publish`);
+  await page.getByRole("button", { name: "Publish 1 question" }).click();
+  await expect(page.getByText("1 question published to the student bank.")).toBeVisible();
+  await page.goto(`/questions?${new URLSearchParams({ source: title })}`);
+  await expect(page.locator("math")).toBeVisible();
+  await expect.poll(() => source.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByText(explanation)).toHaveCount(0);
+  await page.getByRole("button", { name: /A. Circle diagram/ }).click();
+  await expect(page.getByText("Correct answer", { exact: true })).toBeVisible();
+  await page.getByText("Explanation", { exact: true }).click();
+  await expect(page.getByText(explanation)).toBeVisible();
+  if (process.env.PREVIEW_SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.PREVIEW_SCREENSHOT_DIR, "rich-choices.png") });
+  await page.goto("/practice");
+  await page.getByRole("combobox", { name: "Paper" }).selectOption(title);
+  await page.getByRole("button", { name: "Start test" }).click();
+  await expect(page.locator("math")).toBeVisible();
+  await expect(source).toBeVisible();
+  await expect(page.getByText(explanation)).toHaveCount(0);
+  await page.getByRole("button", { name: /A. Circle diagram/ }).click();
+  await expect(page.getByText("Answer saved")).toBeVisible();
+});
 
 test("publishes revisions independently of active tests and keeps editorial history", async ({ page, context }) => {
   const fixture = process.env.SCAN_FIXTURE_DIR;
@@ -60,6 +127,8 @@ test("publishes revisions independently of active tests and keeps editorial hist
   await page.getByRole("link", { name: "Review answers" }).click();
   await expect(page.getByText(/2 \/ 2 points.*1 correct/)).toBeVisible();
   await expect(page.locator(".option-correct")).toContainText("Parliament");
+  const retainedCrop = await page.locator(".question-content img").first().getAttribute("src");
+  expect(retainedCrop).toBeTruthy();
 
   await admin.goto(history);
   await expect(admin.getByRole("table", { name: "Published revisions" }).getByRole("row")).toHaveCount(3);
@@ -68,10 +137,21 @@ test("publishes revisions independently of active tests and keeps editorial hist
   await expect(admin.getByLabel("Correct answer")).toHaveValue("a");
   await bank.reload();
   await expect(bank.getByRole("radio").first()).toHaveValue("b");
+  const publicCrop = await bank.locator('.question-content img').first().getAttribute("src");
+  expect(publicCrop).toBeTruthy();
+  expect((await bank.request.get(publicCrop!)).status()).toBe(200);
   await admin.goto(history);
   await admin.getByRole("button", { name: "Archive question" }).click();
   await expect(admin.getByRole("button", { name: "Return to question bank" })).toBeVisible();
   await expect((await bank.goto(`/questions/${slug}`))?.status()).toBe(404);
+  expect((await bank.request.get(publicCrop!)).status()).toBe(404);
+  expect((await page.request.get(retainedCrop!)).status()).toBe(200);
+  const stranger = await context.browser()!.newContext();
+  try {
+    expect((await stranger.request.get(new URL(retainedCrop!, page.url()).toString())).status()).toBe(404);
+  } finally {
+    await stranger.close();
+  }
   await admin.getByRole("button", { name: "Return to question bank" }).click();
   await expect(admin.getByRole("button", { name: "Archive question" })).toBeVisible();
   await bank.goto(`/questions/${slug}`);
@@ -333,6 +413,14 @@ test("imports, edits, and grades an Assertion–Reason question", async ({ page 
   await page.getByRole("link", { name: "Review answers" }).click();
   await expect(page.locator(".option-correct")).toContainText("R does not explain A");
   await expect(page.locator(".option-incorrect")).toContainText("R correctly explains A");
+  if (process.env.ADVANCED_VISUAL === "1") {
+    await page.evaluate(() => document.fonts.ready);
+    await expect(pair).toHaveScreenshot("assertion-reason-desktop.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
+    await page.getByRole("button", { name: "Toggle black and white theme" }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(pair).toHaveScreenshot("assertion-reason-mobile-dark.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
+    await checkAccessibility(page, "Assertion–Reason in Black");
+  }
   const capture = process.env.PREVIEW_SCREENSHOT_DIR;
   if (capture) await page.screenshot({ path: join(capture, "assertion-reason-review.png") });
 });
@@ -370,16 +458,14 @@ test("publishes written answers, grades decimals, and tracks study activity", as
 
   await page.goto(`/questions?${new URLSearchParams({ format: "descriptive", source: title })}`);
   await page.getByRole("link", { name: "Question 2", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Question 2" })).toBeVisible();
   await expect(page.getByText("A reference answer for self-assessment.")).toHaveCount(0);
   const written = page.getByRole("textbox", { name: "Your response", exact: true });
-  await written.fill("My draft response.");
+  await written.pressSequentially("My draft response.");
   await expect(written).toHaveValue("My draft response.");
-  const [reveal] = await Promise.all([
-    page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.startsWith("/questions/")),
-    page.getByRole("button", { name: "Reveal reference answer" }).click(),
-  ]);
-  expect(reveal.ok()).toBe(true);
+  await page.getByRole("button", { name: "Reveal reference answer" }).click({ timeout: 5_000 });
   await expect(page.getByText("A reference answer for self-assessment.")).toBeVisible();
+  await expect(written).toHaveValue("My draft response.");
   await page.getByText("Study note", { exact: true }).click();
   await page.getByRole("textbox", { name: "Study note" }).fill("Practice explaining the reasoning.");
   await page.getByRole("button", { name: "Save note" }).click();
@@ -393,6 +479,11 @@ test("publishes written answers, grades decimals, and tracks study activity", as
   await page.getByRole("button", { name: "Start test" }).click();
   await expect(page.getByRole("heading", { name: "Question 1 of 1" })).toBeVisible();
   await expect(page.locator("math")).toBeVisible();
+  if (process.env.ADVANCED_VISUAL === "1") {
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page.locator(".test-panel .question-content")).toHaveScreenshot("equation-desktop.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
+    await checkAccessibility(page, "Numerical response");
+  }
   await page.getByLabel("Your response").fill("042.00");
   await page.getByRole("button", { name: "Save response" }).click();
   await expect(page.getByText("Answer saved")).toBeVisible();
@@ -407,6 +498,11 @@ test("publishes written answers, grades decimals, and tracks study activity", as
   await expect(page.getByRole("img", { name: /daily study attempts/i })).toBeVisible();
   await page.getByText("Daily attempt counts", { exact: true }).click();
   await expect(page.getByRole("table", { name: "Daily attempt counts" })).toBeVisible();
+  if (process.env.ADVANCED_VISUAL === "1") {
+    await checkAccessibility(page, "Populated activity and progress");
+    await page.getByRole("button", { name: "Toggle black and white theme" }).click();
+    await checkAccessibility(page, "Populated activity and progress in Black");
+  }
   if (capture) await page.screenshot({ path: join(capture, "study-analytics.png") });
 });
 
@@ -454,6 +550,11 @@ test("grades matching pairs and chronological order", async ({ page }) => {
   await expect(page.getByRole("region", { name: "Final test score" })).toContainText("1.33 / 4");
   await page.getByRole("link", { name: "Review answers" }).click();
   await expect(page.getByRole("table", { name: "All test answers" })).toContainText("First quantity");
+  if (process.env.ADVANCED_VISUAL === "1") {
+    await checkAccessibility(page, "Pair-matching review");
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page.locator(".test-options")).toHaveScreenshot("matching-desktop.png", { animations: "disabled", maxDiffPixelRatio: 0.01 });
+  }
   const capture = process.env.PREVIEW_SCREENSHOT_DIR;
   if (capture) await page.screenshot({ path: join(capture, "matching-test-review.png") });
 });

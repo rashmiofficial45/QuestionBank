@@ -12,6 +12,7 @@ import { presentations, textStyles, type Content } from "@/lib/content";
 import { choiceIds } from "@/lib/choice-selection";
 import { isWritten, writtenFormats } from "@/lib/written-answer";
 import { isRanked, rankedFormats } from "@/lib/ranked-answer";
+import { OptionContent } from "@/components/option-content";
 
 export function UploadForm() {
   const [state, action, pending] = useActionState(uploadPapers, {});
@@ -21,7 +22,10 @@ export function UploadForm() {
       <label className="field">Subject <Input name="subject" required maxLength={60} placeholder="Polity" /></label>
     </div>
     <label className="field">Question paper PDF <Input type="file" name="paper" accept=".pdf,application/pdf" required /></label>
-    <label className="field">Answer key PDF <Input type="file" name="key" accept=".pdf,application/pdf" required /></label>
+    <label className="field">Answer key PDF <Input type="file" name="key" accept=".pdf,application/pdf" aria-describedby="key-format" /></label>
+    <p id="key-format" className="text-sm text-muted-foreground">Leave this empty if the paper has a separate page that starts with “Answer Key”.</p>
+    <label className="field">Explanation PDF (optional) <Input type="file" name="explanations" accept=".pdf,application/pdf" aria-describedby="explanation-format" /></label>
+    <p id="explanation-format" className="text-sm text-muted-foreground">Use numbered headings such as “Explanation 1” followed by a colon.</p>
     {state.error && <p className="form-error" role="alert">{state.error}</p>}
     <div><Button type="submit" disabled={pending}><FileUp size={17} />{pending ? "Uploading…" : "Upload and process"}</Button></div>
   </form>;
@@ -136,18 +140,32 @@ export function EditForm({ content, importId, id, issues, generation, classifica
     <input type="hidden" name="options" value={JSON.stringify(options)} />
     {!written && <section className="grid gap-3">
       <h3 className="font-semibold">Answer options</h3>
-      {options.map(({ id, label, text }, index) => <div className="editor-option" key={id}>
-        <label className="field">Label <Input aria-label={`Label for option ${index + 1}`} value={label} maxLength={12} required onChange={(event) => setOptions((current) => current.map((item) => item.id === id ? { ...item, label: event.target.value } : item))} /></label>
-        <label className="field">Option {label}<Textarea value={text} onChange={(event) => setOptions((current) => current.map((option) => option.id === id ? { ...option, text: event.target.value } : option))} rows={2} required maxLength={8000} /></label>
-        <div className="editor-option-actions">
-          <Button variant="outline" type="button" size="icon-sm" aria-label={`Move option ${label} up`} disabled={!index} onClick={() => move(index, -1)}><ArrowUp /></Button>
-          <Button variant="outline" type="button" size="icon-sm" aria-label={`Move option ${label} down`} disabled={index === options.length - 1} onClick={() => move(index, 1)}><ArrowDown /></Button>
-          <Button variant="ghost" type="button" size="icon-sm" aria-label={`Remove option ${label}`} onClick={() => {
-            setOptions((current) => current.filter((option) => option.id !== id));
-            setAnswers((current) => current.filter((answer) => answer !== id));
-          }}><Trash2 /></Button>
-        </div>
-      </div>)}
+      {options.map((option, index) => {
+        const { id, label, text } = option;
+        const equation = option.blocks?.some((block) => block.type === "paragraph") ?? false;
+        const crops = option.blocks?.filter((block) => block.type === "source_crop") ?? [];
+        function updateOption(value: string, math: boolean) {
+          const blocks: NonNullable<typeof option.blocks> = [...crops];
+          if (math) blocks.unshift({ id: "option-equation", type: "paragraph", style: "equation", text: value });
+          setOptions((current) => current.map((item) => item.id === id ? { ...item, text: value, blocks: blocks.length ? blocks : undefined } : item));
+        }
+        return <div className="editor-option" key={id}>
+          <label className="field">Label <Input aria-label={`Label for option ${index + 1}`} value={label} maxLength={12} required onChange={(event) => setOptions((current) => current.map((item) => item.id === id ? { ...item, label: event.target.value } : item))} /></label>
+          <div className="grid min-w-0 gap-2">
+            <label className="field">Option {label}<Textarea value={text} onChange={(event) => updateOption(event.target.value, equation)} rows={2} required maxLength={8000} /></label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={equation} onChange={(event) => updateOption(text, event.target.checked)} />Render option {label} as LaTeX</label>
+            {(crops.length > 0 || (equation && text.trim())) && <OptionContent option={option} importId={importId} administrative />}
+          </div>
+          <div className="editor-option-actions">
+            <Button variant="outline" type="button" size="icon-sm" aria-label={`Move option ${label} up`} disabled={!index} onClick={() => move(index, -1)}><ArrowUp /></Button>
+            <Button variant="outline" type="button" size="icon-sm" aria-label={`Move option ${label} down`} disabled={index === options.length - 1} onClick={() => move(index, 1)}><ArrowDown /></Button>
+            <Button variant="ghost" type="button" size="icon-sm" aria-label={`Remove option ${label}`} onClick={() => {
+              setOptions((current) => current.filter((option) => option.id !== id));
+              setAnswers((current) => current.filter((answer) => answer !== id));
+            }}><Trash2 /></Button>
+          </div>
+          </div>;
+      })}
       <Button type="button" variant="outline" className="justify-self-start" disabled={options.length >= 12} onClick={() => {
         const label = Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ").find((letter) => !options.some((option) => option.label.toUpperCase() === letter)) ?? "";
         setOptions([...options, { id: crypto.randomUUID(), label, text: "" }]);

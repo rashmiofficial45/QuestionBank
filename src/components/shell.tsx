@@ -61,6 +61,7 @@ export function Shell({ children, admin = false, privateAdmin = false }: { child
   }
   return <TestFocusContext.Provider value={{ focused, toggle: () => setFocusPath(focused ? null : pathname) }}>
     <div className="shell" data-collapsed={collapsed || undefined} data-test-focus={focused || undefined}>
+    <a href="#content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground">Skip to content</a>
     <script dangerouslySetInnerHTML={{ __html: "try{const t=localStorage.getItem('atlas-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch{}" }} />
     <aside className="sidebar" id="workspace-sidebar">
       <Link className="brand" href={admin ? "/admin" : "/"}>
@@ -80,7 +81,7 @@ export function Shell({ children, admin = false, privateAdmin = false }: { child
       <header className="topbar"><div className="shell-crumb"><Button type="button" variant="ghost" size="icon" onClick={toggleSidebar}
         aria-controls="workspace-sidebar" aria-expanded={!collapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button>
         <div className="breadcrumb"><span>{admin ? "Admin" : "Study workspace"}</span><ChevronRight size={14} /><strong>{active?.label ?? "Question"}</strong></div></div><Button type="button" variant="outline" size="icon" onClick={toggleTheme} aria-label="Toggle black and white theme"><Sun className="sun-icon" /><Moon className="moon-icon" /></Button></header>
-      <main id="content" className="workspace">{children}</main>
+      <main id="content" tabIndex={-1} className="workspace">{children}</main>
     </div>
   </div></TestFocusContext.Provider>;
 }

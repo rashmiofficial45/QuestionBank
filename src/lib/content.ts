@@ -46,6 +46,9 @@ export const optionSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/),
   label: z.string().trim().min(1).max(12),
   text: z.string().trim().min(1).max(8000),
+  blocks: z.array(z.discriminatedUnion("type", [
+    paragraph.extend({ style: z.literal("equation"), text: z.string().trim().min(1).max(8000) }), crop,
+  ])).min(1).max(6).optional(),
 });
 const question = z.object({
   version: z.literal(1),
@@ -87,6 +90,9 @@ export function publicationIssues(content: Content): string[] {
   }
   const ids = new Set(content.options.map((option) => option.id));
   if (ids.size < 2 || ids.size !== content.options.length || new Set(content.options.map((option) => option.label.toLowerCase())).size !== ids.size) issues.push("Provide at least two options with distinct labels and identifiers.");
+  if ((content.interaction === "true_false" || isRanked(content.interaction)) && content.options.some((option) => option.blocks?.length)) {
+    issues.push("Use text options for True/False, matching, and ordering questions.");
+  }
   if (content.interaction === "true_false") {
     const values = new Set(content.options.map((option) => option.text.trim().toLowerCase()));
     if (content.options.length !== 2 || !values.has("true") || !values.has("false")) {

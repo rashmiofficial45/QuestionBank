@@ -1,6 +1,6 @@
 # Study Atlas
 
-Study Atlas is a local question bank and editorial workspace for civil services preparation. Study Atlas supports paired PDF uploads, asynchronous extraction, read-only review, draft editing, publication, and student practice.
+Study Atlas is a local question bank and editorial workspace for civil services preparation. Study Atlas supports paired or combined PDF uploads, optional explanation PDFs, asynchronous extraction, read-only review, draft editing, publication, and student practice.
 
 ## Local preview
 
@@ -27,11 +27,11 @@ set +a
 .venv/bin/python worker/main.py
 ```
 
-Visit [the student workspace](http://127.0.0.1:3000/) or [PDF imports](http://127.0.0.1:3000/admin/imports). Upload the question paper and separate answer key. Open **Review** for a read-only comparison with the original, **Edit** to save a draft, or **Publish** to send eligible questions to the student bank. Student answers are graded on the server; attempts and bookmarks are associated with a browser cookie.
+Visit [the student workspace](http://127.0.0.1:3000/) or [PDF imports](http://127.0.0.1:3000/admin/imports). Upload a question paper and its separate answer key, or use a single PDF with an **Answer Key** heading at the top of a separate page. An optional explanation PDF can use headings like `Explanation 1:` or `1. Explanation:`. The worker matches those explanations by question number and flags them for editorial verification. Open **Review** for a read-only comparison with the original, **Edit** to save a draft, or **Publish** to send eligible questions to the student bank. Student answers are graded on the server and attempts and bookmarks are associated with a browser cookie.
 
 ## Deployment boundary
 
-The admin console is unauthenticated. Keep **all** admin pages, administrative actions, and source PDF access on loopback or behind a network boundary that restricts access to authorized administrators. Run the public-facing app with `ENABLE_PRIVATE_ADMIN=0`. The application host check supplements loopback binding and is unsuitable as a public access control. An anonymous browser identifier stores progress and provides no authentication.
+The admin console is unauthenticated. Keep **all** admin pages, administrative actions, and source PDF access on loopback or behind a network boundary that restricts access to authorized administrators. Run the public-facing app with `ENABLE_PRIVATE_ADMIN=0`. Set `STUDY_COOKIE_SECURE=1` for HTTPS deployments. The application host check supplements loopback binding and is unsuitable as a public access control. An anonymous browser identifier stores progress and provides no authentication.
 
 For Docker Compose, set `POSTGRES_PASSWORD` and `COMPOSE_DATABASE_URL` in `.env`. Use the `database` hostname and URI-encode the database password in the URL, for example `postgresql://question_bank:YOUR_ENCODED_PASSWORD@database:5432/question_bank`. Then run `docker compose up --build`. Compose binds the website to host loopback and runs migrations before starting the web and worker processes.
 
@@ -54,6 +54,10 @@ The fixture directory must contain `Test-01-Polity-01-QP-23-Nov-.pdf` and `Test-
 The Polity parser handles the sample paper's known two-column layout and renders all nine tables as structured HTML, with links to the original PDF crops. The worker uses word coordinates to map cell text to rules from the native PDF or from the page raster. English scanned question papers and answer keys use Tesseract and require editorial source verification before publishing. Reviewers can open the separate answer key and edit individual cells, prompt text, answers, and optional explanations. The browser uses its native viewer for the full PDF.
 
 The editor covers rectangular tables. Detected ambiguous or merged grids keep their source crops and a review flag. Scan clarity, table ruling, document rotation, and unfamiliar layouts can affect recognition. For an existing import with untouched source blocks, `worker/refresh_tables.py IMPORT_ID` upgrades verified table layouts while retaining question IDs, answers, edits to other fields, and attempts.
+
+For layouts without a verified profile, the worker can infer two columns when it finds numbered questions on either side of a clear gutter. Those drafts include the source crop and a verification flag. The parser also recognizes plain alphabetic labels like `A.` and `B)` in addition to parenthesized labels. Ambiguous reading order, merged tables, numeric or Roman option auto-detection, and diagram interpretation still require source inspection.
+
+Choice questions can retain embedded source images found between option markers. Review each image against the source before publication. In **Edit**, turn on **Render option as LaTeX** to render the option's text as an equation. Image and equation choices keep their original option identifiers and grade in both the question bank and timed practice. Imported and manually entered explanations are revealed after checking an answer or in a submitted test review.
 
 The question bank supports inline grading, highlighted search matches, and numbered shadcn pagination. The sidebar toggle saves its state in the browser. Practice runs a timed test with one question per screen, a scrollable navigator, saved selections, and optional marks for review. The arrows on the question strip move one question at a time and scroll when needed. Use Left and Right to change questions and Up and Down to focus an answer. Enter selects the focused answer or toggles its checkbox on multiple-answer questions. Maximize test hides the workspace navigation. Minimize test or Escape restores it.
 

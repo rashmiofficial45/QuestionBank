@@ -13,7 +13,8 @@ export function TestKeyboard({ previous, next, children }: { previous?: string; 
       if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const target = event.target;
       if (!(target instanceof HTMLElement) || target.closest("input:not([data-test-answer]), textarea, select, [contenteditable=true]")) return;
-      if (target !== document.body && !region.current?.contains(target)) return;
+      if (target.matches('[data-slot="table-container"][tabindex="0"]')) return;
+      if (target !== document.body && target.id !== "content" && !region.current?.contains(target)) return;
 
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();

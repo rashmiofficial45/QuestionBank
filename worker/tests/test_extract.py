@@ -26,6 +26,40 @@ def test_unrecognized_layout_is_staged_with_review_flags(tmp_path):
     assert any("verified profile" in issue for issue in issues)
 
 
+def test_generic_columns_preserve_question_and_option_order(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        for x, number, subject in [(40, 1, "Left"), (330, 2, "Right")]:
+            for index, line in enumerate([f"{number}. {subject} question?", "A. First", "B. Second"]):
+                page.insert_text((x, 50 + index * 25), line)
+        doc.save(paper)
+    make_pdf(key, ["1. B", "2. A"])
+    items = extract(paper, key, tmp_path)
+    assert [(number, content["answer"]) for number, _, content, _ in items] == [(1, "b"), (2, "a")]
+    for (_, _, content, issues), subject in zip(items, ("Left", "Right")):
+        assert [option["text"] for option in content["options"]] == ["First", "Second"]
+        assert content["blocks"][0]["text"] == f"{subject} question?"
+        assert content["blocks"][1]["reference"]
+        assert any("two-column" in issue for issue in issues)
+
+
+def test_combined_pdf_separates_answer_key_from_roman_statements(tmp_path):
+    paper = tmp_path / "combined.pdf"
+    with pymupdf.open() as doc:
+        for lines in (["1. Consider the following:", "I. First claim", "II. Second claim", "A. One", "B. Two"],
+                      ["Answer Key", "1. B"]):
+            page = doc.new_page()
+            for index, line in enumerate(lines):
+                page.insert_text((40, 50 + index * 20), line)
+        doc.save(paper)
+    [(_, _, content, issues)] = extract(paper, None)
+    assert content["blocks"][1]["type"] == "statements"
+    assert [option["label"] for option in content["options"]] == ["A", "B"]
+    assert content["answer"] == "b"
+    assert any("combined PDF" in issue for issue in issues)
+
+
 def test_assertion_reason_keeps_source_labels_options_and_key(tmp_path):
     paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
     make_pdf(paper, [
@@ -74,6 +108,25 @@ def test_embedded_prompt_image_is_preserved_as_source_crop(tmp_path):
     assert content["answer"] == "a"
 
 
+def test_embedded_option_images_follow_their_own_markers(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    with pymupdf.open() as art, pymupdf.open() as doc:
+        drawing = art.new_page(width=40, height=40)
+        drawing.draw_circle((20, 20), 12, fill=(0, 0, 0))
+        page = doc.new_page()
+        page.insert_text((40, 50), "1. Select the diagram.")
+        for label, y in [("a", 80), ("b", 145)]:
+            page.insert_text((40, y), f"({label})")
+            page.insert_image(pymupdf.Rect(65, y, 105, y + 40), pixmap=drawing.get_pixmap())
+        doc.save(paper)
+    make_pdf(key, ["1. (b)"])
+    [(_, _, content, issues)] = extract(paper, key, tmp_path)
+    files = [option["blocks"][0]["file"] for option in content["options"]]
+    assert len(set(files)) == 2 and all((tmp_path / file).is_file() for file in files)
+    assert [option["text"] for option in content["options"]] == ["Image option A", "Image option B"]
+    assert content["answer"] == "b" and any("source images" in issue for issue in issues)
+
+
 def test_conflicting_key_does_not_guess(tmp_path):
     paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
     make_pdf(paper, ["1. Which option is correct?", "(a) A", "(b) B"])
@@ -81,6 +134,19 @@ def test_conflicting_key_does_not_guess(tmp_path):
     [(_, _, content, issues)] = extract(paper, key, tmp_path)
     assert content["answer"] is None
     assert "Missing or conflicting official answer." in issues
+
+
+def test_optional_explanations_map_by_number_and_flag_duplicates(tmp_path):
+    paper, key, explanations = (tmp_path / name for name in ("paper.pdf", "key.pdf", "explanations.pdf"))
+    make_pdf(paper, ["1. First?", "(a) A", "(b) B", "2. Second?", "(a) A", "(b) B"])
+    make_pdf(key, ["1. (a)", "2. (b)"])
+    make_pdf(explanations, ["Explanation 2: Source for the second question.", "Second line.",
+                            "1. Explanation: An ambiguous explanation.", "Explanation 1: Another explanation."])
+    first, second = extract(paper, key, explanation=explanations)
+    assert first[2]["explanation"] == ""
+    assert any("ambiguous" in issue for issue in first[3])
+    assert second[2]["explanation"] == "Source for the second question.\nSecond line."
+    assert second[2]["answer"] == "b"
 
 
 @pytest.mark.parametrize("entries", [

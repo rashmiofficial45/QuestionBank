@@ -25,17 +25,25 @@ async function validPDF(file: FormDataEntryValue | null): Promise<File | null> {
   return signature === "%PDF-" ? file : null;
 }
 
+function fileProvided(value: FormDataEntryValue | null) {
+  return value !== null && (!(value instanceof File) || value.size > 0);
+}
+
 export async function uploadPapers(_previous: FormStatus, form: FormData): Promise<FormStatus> {
   await requireAdmin();
   const meta = uploadMeta.safeParse({ title: form.get("title"), subject: form.get("subject") });
   if (!meta.success) return { error: "Enter a paper title and a subject." };
-  const [paper, key] = await Promise.all([validPDF(form.get("paper")), validPDF(form.get("key"))]);
-  if (!paper || !key) return { error: "Select a question paper and answer key as PDF files up to 10 MB each." };
+  const keyInput = form.get("key");
+  const optional = form.get("explanations");
+  const [paper, key, explanations] = await Promise.all([validPDF(form.get("paper")), validPDF(keyInput), validPDF(optional)]);
+  if (!paper || (fileProvided(keyInput) && !key)) return { error: "Select valid paper and answer key PDFs up to 10 MB each." };
+  if (fileProvided(optional) && !explanations) return { error: "Select an explanation PDF up to 10 MB, or leave it empty." };
   const id = crypto.randomUUID();
   const directory = join(storageRoot(), id);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   try {
-    for (const [name, file] of [["paper.pdf", paper], ["key.pdf", key]] as const) {
+    for (const [name, file] of [["paper.pdf", paper], ["key.pdf", key], ["explanations.pdf", explanations]] as const) {
+      if (!file) continue;
       const handle = await open(join(directory, name), "wx", 0o600);
       try {
         await handle.writeFile(new Uint8Array(await file.arrayBuffer()));
@@ -49,8 +57,9 @@ export async function uploadPapers(_previous: FormStatus, form: FormData): Promi
   }
   try {
     await db.transaction(async (tx) => {
-      await tx.insert(imports).values({ id, ...meta.data, paperName: paper.name.slice(0, 255), keyName: key.name.slice(0, 255) });
-      await tx.insert(editorialEvents).values({ importId: id, type: "Uploaded", detail: "Queued the question paper and answer key." });
+      await tx.insert(imports).values({ id, ...meta.data, paperName: paper.name.slice(0, 255), keyName: key?.name.slice(0, 255) ?? "" });
+      await tx.insert(editorialEvents).values({ importId: id, type: "Uploaded",
+        detail: `Queued ${key ? "the question paper and separate answer key" : "the combined question and answer PDF"}${explanations ? " with explanations" : ""}.` });
     });
   } catch (error) {
     console.error(JSON.stringify({ event: "import.queue_failed", id, reason: error instanceof Error ? error.name : "unknown" }));
@@ -82,6 +91,12 @@ export async function saveDraft(importId: string, id: string, generation: number
     const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, id), eq(drafts.importId, importId))).for("update");
     if (!draft) return { error: "Draft unavailable." };
     if (draft.generation !== generation) return { error: "This draft changed in another edit. Reload before saving." };
+    const sourceImages = new Map(draft.content.options.map((option) => [option.id,
+      new Set(option.blocks?.filter((block) => block.type === "source_crop").map((block) => `${block.page}:${block.file}`)),
+    ]));
+    if (optionInputs.data.some((option) => option.blocks?.some((block) => block.type === "source_crop" && !sourceImages.get(option.id)?.has(`${block.page}:${block.file}`)))) {
+      return { error: "Option images must come from the corresponding source option." };
+    }
     const interaction = form.get("interaction") ?? draft.content.interaction;
     const written = typeof interaction === "string" && isWritten(interaction);
     const ranked = typeof interaction === "string" && isRanked(interaction);

@@ -73,7 +73,7 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
           <CardContent>
             <div className="study-badges"><Badge variant="secondary"><SearchHighlight text={item.subject} terms={terms} /></Badge>{item.topic !== "General" && <Badge variant="outline"><SearchHighlight text={item.topic} terms={terms} /></Badge>}{item.content.blocks.some((block) => block.type === "table") && <Badge variant="outline">Table</Badge>}{item.tags.map((tag) => <Badge key={tag} variant="outline"><SearchHighlight text={tag} terms={terms} /></Badge>)}</div>
             <QuestionContent blocks={item.content.blocks} importId={item.importId} terms={terms} />
-            <AnswerForm terms={terms} id={item.id} revision={item.revision} options={item.content.options} interaction={item.content.interaction} prompts={item.content.interaction === "pair_matching" ? item.content.prompts : undefined} inline />
+            <AnswerForm importId={item.importId} terms={terms} id={item.id} revision={item.revision} options={item.content.options} interaction={item.content.interaction} prompts={item.content.interaction === "pair_matching" ? item.content.prompts : undefined} inline />
           </CardContent>
         </Card></article>;
       })}

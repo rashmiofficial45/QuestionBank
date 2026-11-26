@@ -106,8 +106,8 @@ export default async function TestPage({ params, searchParams }: { params: Promi
           <Button type="submit" variant="outline" aria-pressed={saved}>{saved ? <BookmarkCheck /> : <Bookmark />}{saved ? "Bookmarked" : "Bookmark"}</Button>
         </form>
       </div>
-      <QuestionContent blocks={question.content.blocks} importId={question.importId} />
-      <TestOptions key={pinned.id} id={id} questionId={pinned.id} options={question.content.options} interaction={question.content.interaction} response={response}
+      <QuestionContent blocks={question.content.blocks} importId={question.importId} testSessionId={id} />
+      <TestOptions importId={question.importId} key={pinned.id} id={id} questionId={pinned.id} options={question.content.options} interaction={question.content.interaction} response={response}
         prompts={question.content.interaction === "pair_matching" ? question.content.prompts : undefined}
         ended={submitted} answer={submitted ? question.content.answer : undefined} />
       {submitted && question.content.explanation && <details className="source-text"><summary>Explanation</summary><p>{question.content.explanation}</p></details>}

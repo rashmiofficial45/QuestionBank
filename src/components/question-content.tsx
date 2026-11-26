@@ -2,7 +2,7 @@ import { SearchHighlight } from "@/components/search-highlight";
 import type { Content } from "@/lib/content";
 import { statementMarker } from "@/lib/statement-content";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import katex from "katex";
+import { equationMarkup } from "@/components/option-content";
 
 function Statements({ items, terms }: { items: { label: string; text: string }[]; terms?: string[] }) {
   return <ol className="statement-list" aria-label="Statements" role="list">
@@ -32,7 +32,9 @@ function Paragraph({ text, terms }: { text: string; terms?: string[] }) {
     : <Statements key={index} items={group.items} terms={terms} />);
 }
 
-export function QuestionContent({ blocks, importId, administrative = false, terms }: { terms?: string[]; blocks: Content["blocks"]; importId: string | null; administrative?: boolean }) {
+export function QuestionContent({ blocks, importId, administrative = false, terms, testSessionId }: {
+  terms?: string[]; blocks: Content["blocks"]; importId: string | null; administrative?: boolean; testSessionId?: string;
+}) {
   const fallback = blocks.some((block) => block.type === "source_crop" && !block.reference);
   const display = blocks.map((block) => {
     if (block.type === "paragraph") {
@@ -42,7 +44,7 @@ export function QuestionContent({ blocks, importId, administrative = false, term
       if (block.style === "code") return <pre key={block.id} className="my-3 overflow-x-auto rounded-md border bg-muted p-4 text-sm"><code>{text}</code></pre>;
       if (block.style === "equation") {
         try {
-          const markup = katex.renderToString(block.text, { trust: false, output: "mathml", displayMode: true, maxExpand: 100, maxSize: 20 });
+          const markup = equationMarkup(block.text, true);
           return <div key={block.id} className="my-3 overflow-x-auto" dangerouslySetInnerHTML={{ __html: markup }} />;
         } catch {
           return <pre key={block.id} className="my-3 whitespace-pre-wrap rounded-md border p-3" aria-label="Original equation text">{text}</pre>;
@@ -65,7 +67,8 @@ export function QuestionContent({ blocks, importId, administrative = false, term
     </div>;
     if (block.type !== "source_crop") return <p key={String((block as { id?: string }).id)} role="status">This content format needs a newer viewer.</p>;
     if (!importId) return null;
-    const image = `/api/v1/source/${importId}/${block.file}${administrative ? "?admin=1" : ""}`;
+    const access = administrative ? "?admin=1" : testSessionId ? `?test=${encodeURIComponent(testSessionId)}` : "";
+    const image = `/api/v1/source/${importId}/${block.file}${access}`;
     const figure = <figure>
       <a href={image} target="_blank" rel="noreferrer" aria-label={`Open full-size image. ${block.alt}`}>
         <img src={image} alt={block.alt} loading="lazy" />

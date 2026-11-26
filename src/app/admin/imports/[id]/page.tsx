@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { EditorialHistory } from "@/components/editorial-history";
 import { Button } from "@/components/ui/button";
+import { OptionContent } from "@/components/option-content";
 import { QuestionContent } from "@/components/question-content";
 import { EditForm, RefreshImport } from "@/components/import-forms";
 import { ImportStatus } from "@/components/import-list";
@@ -12,7 +13,7 @@ import { choiceIds } from "@/lib/choice-selection";
 import { isRanked } from "@/lib/ranked-answer";
 import { isWritten } from "@/lib/written-answer";
 import { rankedLabels } from "@/components/ranked-fields";
-import { getDrafts, getImport } from "@/modules/imports";
+import { getDrafts, getImport, hasExplanationPDF } from "@/modules/imports";
 import { publishImport, retryImport } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
   if (!z.uuid().safeParse(id).success) notFound();
   const paper = await getImport(id);
   if (!paper) notFound();
+  const explanationPDF = await hasExplanationPDF(id);
   const rows = paper.status === "ready" ? await getDrafts(id) : [];
   const checked = rows.map((draft) => {
     const parsed = questionSchema.safeParse(draft.content);
@@ -49,10 +51,10 @@ export default async function ImportDetails({ params, searchParams }: { params: 
         <p className="results-label">{tableCount} structured {tableCount === 1 ? "table" : "tables"}</p>
         {typeof query.published === "string" && /^\d+$/.test(query.published) && <p className="notice" role="status">{query.published === "0" ? "No new questions were published." : `${query.published} ${query.published === "1" ? "question" : "questions"} published to the student bank.`}</p>}
         <div className="form-actions">
-          <Button variant={mode === "review" ? "default" : "outline"} asChild><Link href={draftLink(selected?.number ?? 1, "review")}><Eye size={17} />Review</Link></Button>
-          <Button variant={mode === "edit" ? "default" : "outline"} asChild><Link href={draftLink(selected?.number ?? 1, "edit")}><Pencil size={16} />Edit</Link></Button>
-          <Button variant={mode === "publish" ? "outline" : "default"} asChild><Link href={`${base}?mode=publish&q=${selected?.number ?? 1}`}><Send size={16} />Publish</Link></Button>
-          <Button variant={mode === "history" ? "default" : "outline"} asChild><Link href={draftLink(selected?.number ?? 1, "history")}><History size={16} />History</Link></Button>
+          <Button className="transition-none" variant={mode === "review" ? "default" : "outline"} asChild><Link aria-current={mode === "review" ? "page" : undefined} href={draftLink(selected?.number ?? 1, "review")}><Eye size={17} />Review</Link></Button>
+          <Button className="transition-none" variant={mode === "edit" ? "default" : "outline"} asChild><Link aria-current={mode === "edit" ? "page" : undefined} href={draftLink(selected?.number ?? 1, "edit")}><Pencil size={16} />Edit</Link></Button>
+          <Button className="transition-none" variant={mode === "publish" ? "outline" : "default"} asChild><Link aria-current={mode === "publish" ? "page" : undefined} href={`${base}?mode=publish&q=${selected?.number ?? 1}`}><Send size={16} />Publish</Link></Button>
+          <Button className="transition-none" variant={mode === "history" ? "default" : "outline"} asChild><Link aria-current={mode === "history" ? "page" : undefined} href={draftLink(selected?.number ?? 1, "history")}><History size={16} />History</Link></Button>
         </div>
       </section>
       {mode === "publish" && <section className="panel bank-panel admin-section"><h2>Publication summary</h2>
@@ -78,7 +80,8 @@ export default async function ImportDetails({ params, searchParams }: { params: 
         <div className="review-layout">
           <section className="panel bank-panel">
             <div className="section-heading"><div><h2>Original paper</h2><p>PDF page {selected.page}</p></div><a className="text-link" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/paper.pdf#page=${selected.page}`}>Open PDF <ArrowUpRight size={15} /></a></div>
-            <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/key.pdf`}>Open answer key <ArrowUpRight size={15} /></a>
+            {paper.keyName && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/key.pdf`}>Open answer key <ArrowUpRight size={15} /></a>}
+            {explanationPDF && <a className="text-link mb-3" target="_blank" rel="noreferrer" href={`/api/v1/source/${id}/explanations.pdf`}>Open explanation PDF <ArrowUpRight size={15} /></a>}
             <iframe className="pdf-preview" key={selected.page} title={`Original paper, page ${selected.page}`} src={`/api/v1/source/${id}/paper.pdf#page=${selected.page}&toolbar=1`} />
           </section>
           <section className="panel bank-panel">
@@ -95,7 +98,7 @@ export default async function ImportDetails({ params, searchParams }: { params: 
                   rankedLabels(selected.content.options, choiceIds(selected.content.answer), selected.content.interaction === "pair_matching" ? selected.content.prompts : undefined)
                 }</p> : <ul className="review-options">{selected.content.options.map((option, index) => {
                   const correct = choiceIds(selected.content.answer).includes(option.id);
-                  return <li key={`${option.id}-${index}`} className={`review-option ${correct ? "correct" : ""}`}><strong>{option.label}.</strong> {option.text} {correct && <Check size={14} className="inline" aria-label="Correct answer" />}</li>;
+                  return <li key={`${option.id}-${index}`} className={`review-option ${correct ? "correct" : ""}`}><strong>{option.label}.</strong> <OptionContent option={option} importId={id} administrative /> {correct && <Check size={14} className="inline" aria-label="Correct answer" />}</li>;
                 })}</ul>}
                 {selected.content.explanation && <p className="notice">{selected.content.explanation}</p>}
               </>}

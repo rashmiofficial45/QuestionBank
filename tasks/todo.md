@@ -9,7 +9,21 @@
 | 3. Editorial administration | Core workflows implemented and verified. The user walkthrough is pending. |
 | 4. Question bank and practice | Core formats implemented. Advanced PDF layout reconstruction and rich answer options remain. |
 | 5. Study tools and analytics | Core workflows available. Includes study notes, activity, streaks, subject and topic performance, and saved-test time and skips. |
-| 6. Release verification | Local build, browser, database and extraction checks run. Live Docker verification remains open. |
+| 6. Release verification | Local build, browser, security, accessibility, visual, database, and extraction checks passed. Live Docker run deferred. |
+
+## Original brief through Section 10
+
+These section numbers follow the 38-section brief. The six implementation phases are listed separately above.
+
+| Sections | Current coverage |
+| --- | --- |
+| 1–2. Product and scope | PDF-to-practice workflow, anonymous progress, and private editorial access. |
+| 3–5. Stack, architecture, and organization | Next.js, PostgreSQL, and a separate Python job worker run locally. The full technology list, including a dedicated PDF.js viewer and Docling, is partly implemented. |
+| 6. Admin console | Dashboard, import and retry history, draft editing, classification, publication, and revisions. Standalone taxonomy, settings, and duplicate-management screens remain open. |
+| 7. PDF upload | Separate or combined paper and answer key, plus an optional explanation PDF. CSV, JSON, and standalone manual creation remain open. |
+| 8. PDF processing pipeline | Persistent jobs with leases, progress, retry, OCR, answer mapping, and explanation extraction. Chunk-level retries and cross-import duplicate detection remain open. |
+| 9. High-fidelity parsing | Verified Polity profile, inferred two-column reading order, source crops, source order, and alphabetic options. More complex formatting, merged grids, and numeric or Roman option auto-detection remain limited. |
+| 10. Question formats | Supported formats include image and equation choices. Automatic extraction of arbitrary diagrams, graphs, shared passages, and formulas remains limited. |
 
 ## 1. Working MVP preview
 
@@ -22,7 +36,7 @@
 
 - [x] Add English OCR for scanned question and answer-key pages and extract rectangular tables from native and scanned source geometry.
 - [x] Render question cards in White and Black with shadcn/ui, inline grading, and saved practice history.
-- [ ] Extend complex layout diagnostics and add explanation imports in a later document milestone.
+- [x] Add conservative two-column diagnostics, combined PDFs with an explicit Answer Key page, and optional explanation PDF imports.
 - [x] Review extraction results with the user and incorporate their study-interface feedback.
 
 ## 3. Editorial administration
@@ -46,12 +60,15 @@
 - [x] Add written and numerical grading, descriptive self-assessment, interactive pairs and ordering, and typed passage, code, and equation rendering.
 - [x] Preserve embedded native prompt images with zoomable original crops.
 - [x] Add browser-local notes and measured study activity, streaks, weak topics, and subject analytics.
-- [ ] Extend rich answer options and automatic reconstruction of advanced PDF layouts.
+- [x] Add image and equation answer options with editorial verification.
+- [ ] Extend automatic reconstruction of advanced PDF layouts and additional option numbering conventions.
 - [ ] Review student features with the user.
 
 ## 5. Release readiness
 
 - [x] Verify a local backup and restore, benchmark search and extraction, and compare table snapshots at desktop and phone widths.
-- [ ] Run Docker Compose and verify the import and persistence checks on a Docker host.
-- [ ] Extend visual and accessibility coverage to all advanced formats and run an independent security review.
+- [ ] Run Docker Compose and verify the import and persistence checks on a Docker host. Deferred at the user's request.
+- [x] Check public-mode access controls and audit Node.js and Python runtime dependencies.
+- [x] Verify keyboard accessibility and automated contrast checks, and compare selected advanced-format screenshots in Chrome on macOS.
+- [ ] Extend browser visual and accessibility coverage beyond the locally tested screens and run an independent security review.
 - [ ] Review production readiness with the user.

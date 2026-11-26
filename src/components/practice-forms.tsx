@@ -13,6 +13,7 @@ import { isWritten } from "@/lib/written-answer";
 import { Textarea } from "@/components/ui/textarea";
 import { isRanked } from "@/lib/ranked-answer";
 import { RankedFields, rankedLabels } from "@/components/ranked-fields";
+import { OptionContent } from "@/components/option-content";
 
 export function PracticeSetup({ papers }: { papers: { name: string }[] }) {
   const [state, action, pending] = useActionState(startPractice, {});
@@ -54,8 +55,8 @@ export function TestTimer({ id, seconds, unanswered }: { id: string; seconds: nu
   </div>;
 }
 
-export function TestOptions({ id, questionId, options, interaction, prompts, response, answer, ended }: {
-  id: string; questionId: string; options: Content["options"]; interaction: Content["interaction"];
+export function TestOptions({ id, questionId, importId, options, interaction, prompts, response, answer, ended }: {
+  id: string; questionId: string; importId?: string | null; options: Content["options"]; interaction: Content["interaction"];
   response: TestResponse; answer?: ChoiceSelection | null; ended: boolean; prompts?: string[];
 }) {
   const [state, action, pending] = useActionState(saveResponse.bind(null, id, questionId), {});
@@ -92,11 +93,11 @@ export function TestOptions({ id, questionId, options, interaction, prompts, res
               next.forEach((value) => data.append("option", value));
               startTransition(() => { select(next); action(data); });
             }} />
-          <span className="option-letter">{option.label}.</span><span>{option.text}</span>{feedback}
+          <span className="option-letter">{option.label}.</span><OptionContent option={option} importId={importId} testSessionId={id} />{feedback}
         </label>;
         return <Button key={option.id} type="submit" variant="outline" name="option" value={option.id} aria-pressed={selected} data-test-answer
           className={`option inline-option test-choice ${style}`}>
-          <span className="option-letter">{option.label}.</span><span>{option.text}</span>
+          <span className="option-letter">{option.label}.</span><OptionContent option={option} importId={importId} testSessionId={id} />
           {feedback ?? (selected ? <Check aria-hidden="true" /> : <span />)}
         </Button>;
       })}

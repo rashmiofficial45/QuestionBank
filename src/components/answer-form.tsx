@@ -3,7 +3,7 @@
 import { ArrowRight, Check, CircleCheck, RotateCcw, X } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useEffect, useState, useTransition } from "react";
-import { SearchHighlight } from "@/components/search-highlight";
+import { OptionContent } from "@/components/option-content";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { submitAnswer, type AnswerState } from "@/app/(student)/actions";
@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { isRanked } from "@/lib/ranked-answer";
 import { RankedFields, rankedLabels } from "@/components/ranked-fields";
 
-type Props = { terms?: string[]; id: string; revision: number; options: Content["options"]; interaction: Content["interaction"]; prompts?: string[]; next?: string; inline?: boolean; mode?: "practice" | "bank" };
+type Props = { terms?: string[]; id: string; importId?: string | null; revision: number; options: Content["options"]; interaction: Content["interaction"]; prompts?: string[]; next?: string; inline?: boolean; mode?: "practice" | "bank" };
 
 export function AnswerForm(props: Props) {
   const [round, setRound] = useState(0);
@@ -46,6 +46,7 @@ function RankedRound({ id, revision, mode = "bank", options, prompts, retry, nex
 function WrittenRound({ id, revision, interaction, mode = "bank", retry, next }: Props & { interaction: WrittenInteraction; retry: () => void }) {
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
+  const [response, setResponse] = useState("");
   const [result, setResult] = useState<AnswerState>({});
   const [pending, startSubmission] = useTransition();
   const descriptive = interaction === "descriptive";
@@ -55,8 +56,7 @@ function WrittenRound({ id, revision, interaction, mode = "bank", retry, next }:
     startSubmission(async () => setResult(await submitAnswer(id, revision, mode, {}, data)));
   }}>
     <label className="field">Your response
-      <Textarea name="option" aria-label="Your response" key={result.answer ? "review" : "response"}
-        defaultValue={typeof result.selected === "string" ? result.selected : ""}
+      <Textarea name="option" aria-label="Your response" value={response} onChange={(event) => setResponse(event.target.value)}
         inputMode={interaction === "numeric" ? "decimal" : undefined} rows={descriptive ? 5 : 2} maxLength={8000}
         disabled={!ready} readOnly={Boolean(result.answer)} required />
     </label>
@@ -70,11 +70,13 @@ function WrittenRound({ id, revision, interaction, mode = "bank", retry, next }:
       {result.explanation && <details className="source-text"><summary>Explanation</summary><p>{result.explanation}</p></details>}
       <div className="form-actions"><Button type="button" variant="outline" onClick={retry}>Try again</Button>
         {next && <Button asChild><Link href={next}>Next question <ArrowRight /></Link></Button>}</div>
-    </> : <Button type="submit" disabled={!ready || pending} className="justify-self-start">{descriptive ? "Reveal reference answer" : "Check answer"}</Button>}
+    </> : <Button type="submit" disabled={!ready || pending || !response.trim()} className="justify-self-start">{descriptive ? "Reveal reference answer" : "Check answer"}</Button>}
   </form>;
 }
 
-function AnswerRound({ id, revision, options, interaction, next, terms, inline = false, mode = "bank", retry }: Props & { retry: () => void }) {
+function AnswerRound({ id, importId, revision, options, interaction, next, terms, inline = false, mode = "bank", retry }: Props & { retry: () => void }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
   const [selected, select] = useState<string[]>([]);
   const [result, action, pending] = useActionState(submitAnswer.bind(null, id, revision, mode), {});
   const answerIds = choiceIds(result.answer);
@@ -84,7 +86,7 @@ function AnswerRound({ id, revision, options, interaction, next, terms, inline =
   const prompt = interaction === "true_false" ? "Select True or False" : multiple ? "Select all correct answers" : "Select one answer";
   const immediate = inline && !multiple;
   return <form action={action} className="answer-form">
-    <fieldset disabled={pending || graded}>
+    <fieldset disabled={!ready || pending || graded}>
       <legend className={immediate ? "sr-only" : undefined}>{prompt}</legend>
       {options.map((option) => {
         const correct = answerIds.includes(option.id);
@@ -92,7 +94,7 @@ function AnswerRound({ id, revision, options, interaction, next, terms, inline =
         const state = correct ? "option-correct" : incorrect ? "option-incorrect" : "";
         const checked = selected.includes(option.id);
         const content = <>
-          <span className="option-letter">{option.label}.</span><span><SearchHighlight text={option.text} terms={terms} /></span>
+          <span className="option-letter">{option.label}.</span><OptionContent option={option} importId={importId} terms={terms} />
           {correct ? <Check size={17} aria-label="Correct" /> : incorrect ? <X size={17} aria-label="Your answer was incorrect" /> : !inline && !multiple && <span className="option-radio" />}
         </>;
         return immediate
