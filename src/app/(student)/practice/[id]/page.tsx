@@ -87,7 +87,7 @@ export default async function TestPage({ params, searchParams }: { params: Promi
       </div>
     </header>
     {!submitted && <p className="hidden text-xs text-muted-foreground sm:block">← / → Change question · ↑ / ↓ Focus an option · Enter Select</p>}
-    <PracticePalette id={id} index={index} entries={entries} reviewing={reviewing} />
+    <PracticePalette id={id} index={index} entries={entries} reviewing={reviewing} previous={previous} next={next} />
     <article className="panel test-panel">
       <div className="question-nav">
         <div>

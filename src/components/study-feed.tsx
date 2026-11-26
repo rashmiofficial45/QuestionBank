@@ -21,7 +21,7 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
   const query = value(params.q, 120);
   const subject = value(params.subject, 60);
   const source = value(params.source, 120);
-  const format = params.format === "table" || params.format === "multiple_choice" ? params.format : "";
+  const format = params.format === "table" || params.format === "multiple_choice" || params.format === "true_false" ? params.format : "";
   const requestedPage = /^\d{1,9}$/.test(value(params.page, 10)) ? Math.max(1, Number(params.page)) : 1;
   const base = "/questions";
   const [{ items, count, page }, groups, papers, saved] = await Promise.all([browse(query, subject, requestedPage, source, format), subjects(), paperSources(), bookmarkIds()]);
@@ -45,6 +45,7 @@ export async function StudyFeed({ searchParams }: { searchParams: SearchParams }
       <NativeSelect aria-label="Question format" name="format" defaultValue={format}>
         <NativeSelectOption value="">All formats</NativeSelectOption>
         <NativeSelectOption value="table">Table questions</NativeSelectOption>
+        <NativeSelectOption value="true_false">True/False</NativeSelectOption>
         <NativeSelectOption value="multiple_choice">Multiple correct answers</NativeSelectOption>
       </NativeSelect>
       <Button type="submit" variant="outline">Search</Button>

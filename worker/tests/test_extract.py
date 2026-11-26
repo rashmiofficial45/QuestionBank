@@ -35,6 +35,74 @@ def test_conflicting_key_does_not_guess(tmp_path):
     assert "Missing or conflicting official answer." in issues
 
 
+@pytest.mark.parametrize("entries", [
+    ["1. A, C"],
+    ["1.(A, C)"],
+    ["1.(C) and (A)"],
+    ["1. C & A", "1. A + C"],
+])
+def test_multiple_answer_entry_preserves_option_order(tmp_path, entries):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, ["1. Which options are correct?", "(a) First", "(b) Second", "(c) Third"])
+    make_pdf(key, entries)
+    [(_, _, content, issues)] = extract(paper, key)
+    assert content["interaction"] == "multiple_choice"
+    assert content["answer"] == ["a", "c"]
+    assert any("Verify the full answer set" in issue for issue in issues)
+
+
+@pytest.mark.parametrize("entries", [
+    ["1. A, D"],
+    ["1. A, A"],
+    ["1. A and"],
+    ["1. A / C"],
+    ["1. A or C"],
+    ["1. A, C", "1. A"],
+])
+def test_invalid_or_conflicting_answer_set_is_flagged(tmp_path, entries):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, ["1. Which options are correct?", "(a) First", "(b) Second", "(c) Third"])
+    make_pdf(key, entries)
+    [(_, _, content, issues)] = extract(paper, key)
+    assert content["answer"] is None
+    assert "Missing or conflicting official answer." in issues
+
+
+def test_inline_single_and_multiple_answer_entries(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, ["1. First question?", "(a) A", "(b) B", "2. Second question?", "(a) A", "(b) B"])
+    make_pdf(key, ["1. A, B; 2.(b)"])
+    assert [content["answer"] for _, _, content, _ in extract(paper, key)] == [["a", "b"], "b"]
+
+
+@pytest.mark.parametrize(("entries", "expected"), [
+    (["1. (true)"], "b"),
+    (["1. False"], "a"),
+    (["1. True", "1. B"], "b"),
+    (["1. True", "1. A"], None),
+    (["1. A, B"], None),
+])
+def test_true_false_maps_key_to_original_option_ids(tmp_path, entries, expected):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, ["1. A year has twelve months.", "(a) FALSE", "(b) True"])
+    make_pdf(key, entries)
+    [(_, _, content, issues)] = extract(paper, key)
+    assert content["interaction"] == "true_false"
+    assert [option["text"] for option in content["options"]] == ["FALSE", "True"]
+    assert content["answer"] == expected
+    assert ("Missing or conflicting official answer." in issues) == (expected is None)
+
+
+def test_true_false_key_requires_explicit_binary_options(tmp_path):
+    paper, key = tmp_path / "paper.pdf", tmp_path / "key.pdf"
+    make_pdf(paper, ["1. Which option is correct?", "(a) One", "(b) Two"])
+    make_pdf(key, ["1. True"])
+    [(_, _, content, issues)] = extract(paper, key)
+    assert content["interaction"] == "single_choice"
+    assert content["answer"] is None
+    assert "Missing or conflicting official answer." in issues
+
+
 def test_actual_polity_paper_and_key(tmp_path):
     fixture_dir = os.getenv("POLITY_FIXTURE_DIR")
     if not fixture_dir:
@@ -108,6 +176,20 @@ def test_structured_table_and_answer_key(tmp_path, scanned):
     assert table["page"] == 1
     if scanned:
         assert any("OCR" in issue for issue in issues)
+
+
+def test_scanned_multiple_answer_key(tmp_path):
+    import shutil
+
+    if not shutil.which("tesseract"):
+        pytest.skip("Install Tesseract with English language data.")
+    paper, key, scanned = (tmp_path / name for name in ("paper.pdf", "key.pdf", "scan-key.pdf"))
+    make_pdf(paper, ["1. Which options are correct?", "(a) First", "(b) Second", "(c) Third"])
+    make_pdf(key, ["1. A, C"])
+    scan(key, scanned)
+    [(_, _, content, issues)] = extract(paper, scanned)
+    assert content["answer"] == ["a", "c"]
+    assert any("answer key was read using OCR" in issue for issue in issues)
 
 
 def test_rasterized_polity_layout_and_key():

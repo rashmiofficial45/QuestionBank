@@ -57,14 +57,26 @@ test("renders interactive cards in both themes, including structured tables and 
   await page.getByRole("button", { name: "Minimize test" }).click();
   await expect(page.locator(".sidebar")).toBeVisible();
   const palette = page.getByRole("navigation", { name: "Jump to a test question" });
-  await expect(palette.getByRole("link")).toHaveCount(50);
+  await expect(palette.locator(".test-step")).toHaveCount(50);
   const questionStrip = page.locator(".test-palette-scroll");
   await expect(questionStrip).toHaveCSS("scrollbar-width", "none");
   await expect(page.locator("html")).toHaveCSS("scrollbar-width", "none");
-  await palette.getByRole("button", { name: "Scroll to later questions" }).click();
+  await expect(palette.getByRole("button", { name: "Previous question" })).toBeDisabled();
+  await palette.getByRole("link", { name: "Question 6, unanswered" }).click();
+  await palette.getByRole("link", { name: "Previous question" }).click();
+  await expect(page.getByRole("heading", { name: "Question 5 of 50" })).toBeVisible();
+  await palette.getByRole("link", { name: "Previous question" }).click();
+  await expect(page.getByRole("heading", { name: "Question 4 of 50" })).toBeVisible();
+  await expect.poll(() => questionStrip.evaluate((rail) => rail.scrollLeft)).toBe(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const number of [5, 6, 7, 8]) {
+    await palette.getByRole("link", { name: "Next question" }).click();
+    await expect(page.getByRole("heading", { name: `Question ${number} of 50` })).toBeVisible();
+  }
   await expect.poll(() => questionStrip.evaluate((rail) => rail.scrollLeft)).toBeGreaterThan(0);
-  await palette.getByRole("button", { name: "Scroll to earlier questions" }).click();
-  await expect.poll(() => questionStrip.evaluate((rail) => rail.scrollLeft)).toBeLessThanOrEqual(1);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await palette.getByRole("link", { name: "Question 1, unanswered", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Question 1 of 50" })).toBeVisible();
   const optionA = page.locator('button[name="option"][value="a"]');
   const optionB = page.locator('button[name="option"][value="b"]');
   await page.keyboard.press("ArrowDown");
@@ -91,6 +103,7 @@ test("renders interactive cards in both themes, including structured tables and 
   await expect(page.getByRole("heading", { name: "Question 50 of 50" })).toBeVisible();
   await expect.poll(() => page.locator(".test-palette-scroll").evaluate((rail) => rail.scrollLeft)).toBeGreaterThan(0);
   await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(palette.getByRole("button", { name: "Next question" })).toBeDisabled();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   if (capture) await page.screenshot({ path: join(capture, "practice-mobile.png") });

@@ -1,5 +1,16 @@
 # Implementation checklist
 
+## Original six-phase roadmap
+
+| Phase | Status |
+| --- | --- |
+| 1. Architecture and project setup | Complete |
+| 2. PDF ingestion and validation | Complete for the initial workflow. Later document layouts and explanation imports remain in the backlog. |
+| 3. Editorial administration | Core workflows implemented and verified. The user walkthrough is pending. |
+| 4. Question bank and practice | In progress. Additional question formats remain. |
+| 5. Study tools and analytics | Started. Bookmarks, progress, revision, and topic analytics are available. |
+| 6. Release verification | Pending. Integration and browser regressions run during each increment. |
+
 ## 1. Working MVP preview
 
 - [x] Search and browse published questions, submit an answer, and retain anonymous progress. Verified through the browser against PostgreSQL.
@@ -26,8 +37,11 @@
 - [x] Add a collapsible sidebar, test focus mode, a separate results and review flow, and deletable score history.
 - [x] Add a revision queue and performance by subject and topic. Verify scoring, review deletion, and retry behavior in the browser.
 - [x] Add keyboard shortcuts for navigating timed tests and selecting answers.
+- [x] Move one question at a time with the question-strip arrows and keep the current number in view.
 - [x] Add multiple-correct MCQs with editorial answer keys and exact-set grading.
-- [ ] Extend the remaining question formats and detect multiple-correct answer keys during import.
+- [x] Import explicit multiple-answer PDF keys and flag them for editorial verification.
+- [x] Import, edit, filter, and grade True/False questions with explicit source options.
+- [ ] Extend the remaining question formats.
 - [ ] Review student features with the user.
 
 ## 5. Release readiness

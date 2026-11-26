@@ -12,7 +12,18 @@ from document_layout import analyze_page, center, read_scanned_columns
 QUESTION = re.compile(r"^(\d{1,3})[.)](?:\s+|$)(.*)$")
 OCR_QUESTION = re.compile(r"^(\d{1,3})[,.:)](?:\s+|$)(.*)$")
 OPTION = re.compile(r"^\(([A-Za-z])\)\s*(.*)$")
-KEY = re.compile(r"(?<![\w.])(\d{1,3})\s*(?:[.):–-]\s*|\s+)\(?([A-Za-z])\)?(?=\s|$)")
+KEY_START = re.compile(
+    r"(?<![\w.])(\d{1,3})(?:\s*[.):–-]\s*|\s+)"
+    r"(?=\(?\s*(?:[A-Za-z]|true|false)\b(?:[\s),;&+]|/(?=[A-Za-z(])|$))",
+    re.I,
+)
+KEY_LABEL = r"(?:\(\s*[A-Za-z]\s*\)|[A-Za-z])"
+KEY_SEPARATOR = r"\s*(?:,\s*(?:and\b)?|[&+]|\band\b)\s*"
+KEY_VALUE = re.compile(
+    rf"(?:{KEY_LABEL}(?:{KEY_SEPARATOR}{KEY_LABEL})*|\(\s*[A-Za-z](?:{KEY_SEPARATOR}[A-Za-z])+\s*\))",
+    re.I,
+)
+KEY_BOOLEAN = re.compile(r"(true|false)|\(\s*(true|false)\s*\)", re.I)
 MAX_PAGES = 100
 POLITY_TABLES = {6, 18, 23, 25, 27, 35, 39, 43, 47}
 
@@ -69,8 +80,19 @@ def read_key(layouts):
     answers = defaultdict(set)
     for layout in layouts:
         for _, text in layout.lines:
-            for match in KEY.finditer(text):
-                answers[int(match[1])].add(match[2].lower())
+            entries = list(KEY_START.finditer(text))
+            for position, entry in enumerate(entries):
+                next_entry = entries[position + 1] if position + 1 < len(entries) else None
+                value = text[entry.end():next_entry.start() if next_entry else len(text)].strip()
+                if next_entry:
+                    value = value.rstrip(",; ")
+                boolean = KEY_BOOLEAN.fullmatch(value)
+                if boolean:
+                    labels = [(boolean[1] or boolean[2]).lower()]
+                else:
+                    labels = re.findall(r"\b[a-z]\b", value.lower()) if KEY_VALUE.fullmatch(value) else []
+                answer = frozenset(labels)
+                answers[int(entry[1])].add(answer if 1 <= len(labels) == len(answer) <= 12 else None)
     return answers
 
 
@@ -203,8 +225,18 @@ def extract(paper: Path, key: Path, output: Path | None = None, stage=lambda _: 
                 else:
                     stem.append(line)
             choices = [Choice(id=letter, label=letter.upper(), text=as_text(parts)).model_dump() for letter, parts in options]
+            option_ids = {option["id"] for option in choices}
+            boolean_options = {option["text"].strip().lower(): option["id"] for option in choices}
+            is_boolean = len(choices) == len(option_ids) == 2 and boolean_options.keys() == {"true", "false"}
             candidates = answers[number]
-            answer = next(iter(candidates)) if len(candidates) == 1 else None
+            if is_boolean:
+                candidates = {
+                    frozenset(boolean_options.get(label, label) for label in candidate) if candidate else None
+                    for candidate in candidates
+                }
+            selected = next(iter(candidates)) if len(candidates) == 1 else None
+            interaction = "true_false" if is_boolean else "single_choice"
+            answer = None
             issues = list(global_issues)
             page_layouts = [layouts[index - 1] for index in {page, *(line.page for line in content)}]
             if any(layout.scanned for layout in page_layouts):
@@ -213,10 +245,15 @@ def extract(paper: Path, key: Path, output: Path | None = None, stage=lambda _: 
                     issues.append("OCR detected low-confidence words on a source page.")
             if any(layout.scanned for layout in key_layouts):
                 issues.append("The answer key was read using OCR. Verify the selected answer against the key.")
-            if not answer or answer not in {option["id"] for option in choices}:
+            if not selected or not selected.issubset(option_ids) or (is_boolean and len(selected) != 1):
                 issues.append("Missing or conflicting official answer.")
-                answer = None
-            if len(choices) < 2 or len({choice["id"] for choice in choices}) != len(choices) or any(not c["text"] for c in choices):
+            elif len(selected) == 1:
+                answer = next(iter(selected))
+            else:
+                interaction = "multiple_choice"
+                answer = [option["id"] for option in choices if option["id"] in selected]
+                issues.append("The key lists multiple correct options. Verify the full answer set against the source.")
+            if len(choices) < 2 or len(option_ids) != len(choices) or any(not c["text"] for c in choices):
                 issues.append("Option boundaries need review.")
             if polity and [choice["id"] for choice in choices] != list("abcd"):
                 issues.append("Expected four options in source order.")
@@ -234,6 +271,6 @@ def extract(paper: Path, key: Path, output: Path | None = None, stage=lambda _: 
                     for crop in crops:
                         crop["reference"] = True
                 blocks.extend(crops)
-            items.append((number, page, dict(version=1, interaction="single_choice", blocks=blocks,
+            items.append((number, page, dict(version=1, interaction=interaction, blocks=blocks,
                                               options=choices, answer=answer, explanation=""), issues))
         return items

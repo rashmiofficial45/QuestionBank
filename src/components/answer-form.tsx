@@ -24,10 +24,11 @@ function AnswerRound({ id, revision, options, interaction, next, terms, inline =
   const answers = options.filter((option) => answerIds.includes(option.id));
   const graded = answers.length > 0;
   const multiple = interaction === "multiple_choice";
+  const prompt = interaction === "true_false" ? "Select True or False" : multiple ? "Select all correct answers" : "Select one answer";
   const immediate = inline && !multiple;
   return <form action={action} className="answer-form">
     <fieldset disabled={pending || graded}>
-      <legend className={immediate ? "sr-only" : undefined}>{multiple ? "Select all correct answers" : "Select one answer"}</legend>
+      <legend className={immediate ? "sr-only" : undefined}>{prompt}</legend>
       {options.map((option) => {
         const correct = answerIds.includes(option.id);
         const incorrect = graded && choiceIds(result.selected).includes(option.id) && !correct;

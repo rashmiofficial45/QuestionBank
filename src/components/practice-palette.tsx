@@ -7,22 +7,25 @@ import { useEffect, useRef } from "react";
 
 type Entry = { answered: boolean; marked: boolean; correct?: boolean };
 
-export function PracticePalette({ id, index, entries, reviewing = false }: { id: string; index: number; entries: Entry[]; reviewing?: boolean }) {
+export function PracticePalette({ id, index, entries, reviewing = false, previous, next }: {
+  id: string; index: number; entries: Entry[]; reviewing?: boolean; previous?: string; next?: string;
+}) {
   const rail = useRef<HTMLDivElement>(null);
   const active = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
     const bar = rail.current;
     const current = active.current;
     if (!bar || !current) return;
-    if (current.offsetLeft < bar.scrollLeft || current.offsetLeft + current.offsetWidth > bar.scrollLeft + bar.clientWidth) {
-      bar.scrollLeft = current.offsetLeft - (bar.clientWidth - current.offsetWidth) / 2;
-    }
+    const item = current.getBoundingClientRect();
+    const strip = bar.getBoundingClientRect();
+    if (item.left < strip.left) bar.scrollLeft += item.left - strip.left;
+    else if (item.right > strip.right) bar.scrollLeft += item.right - strip.right;
   }, [index]);
-  const scroll = (direction: -1 | 1) => {
-    if (rail.current) rail.current.scrollBy({ left: direction * rail.current.clientWidth * 0.85, behavior: "auto" });
-  };
+  const arrows = entries.length > 1;
   return <nav className="test-palette" aria-label="Jump to a test question">
-    {entries.length > 7 && <Button variant="ghost" size="icon-sm" type="button" onClick={() => scroll(-1)} aria-label="Scroll to earlier questions"><ChevronLeft /></Button>}
+    {arrows && (previous
+      ? <Button asChild variant="ghost" size="icon-sm"><Link href={previous} replace aria-label="Previous question"><ChevronLeft /></Link></Button>
+      : <Button variant="ghost" size="icon-sm" type="button" disabled aria-label="Previous question"><ChevronLeft /></Button>)}
     <div className="test-palette-scroll" ref={rail}>
       {entries.map(({ answered, marked, correct }, position) => {
         const selected = position === index;
@@ -33,6 +36,8 @@ export function PracticePalette({ id, index, entries, reviewing = false }: { id:
           prefetch={false} replace>{position + 1}</Link>;
       })}
     </div>
-    {entries.length > 7 && <Button variant="ghost" size="icon-sm" type="button" onClick={() => scroll(1)} aria-label="Scroll to later questions"><ChevronRight /></Button>}
+    {arrows && (next
+      ? <Button asChild variant="ghost" size="icon-sm"><Link href={next} replace aria-label="Next question"><ChevronRight /></Link></Button>
+      : <Button variant="ghost" size="icon-sm" type="button" disabled aria-label="Next question"><ChevronRight /></Button>)}
   </nav>;
 }

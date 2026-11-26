@@ -56,11 +56,12 @@ export function TestOptions({ id, questionId, options, interaction, response, an
 }) {
   const [state, action, pending] = useActionState(saveResponse.bind(null, id, questionId), {});
   const multiple = interaction === "multiple_choice";
+  const prompt = interaction === "true_false" ? "Select True or False" : multiple ? "Select all correct answers" : "Select one answer";
   const [selectedIds, select] = useOptimistic(choiceIds(response.options ?? response.option), (_current, next: string[]) => next);
   const answerIds = choiceIds(answer);
   return <form action={action} className="test-options">
     <fieldset disabled={ended || (pending && !multiple)} className="answer-form">
-      <legend>{ended ? "Answer review" : multiple ? "Select all correct answers" : "Select one answer"}</legend>
+      <legend>{ended ? "Answer review" : prompt}</legend>
       {options.map((option) => {
         const selected = selectedIds.includes(option.id);
         const correct = ended && answerIds.includes(option.id);

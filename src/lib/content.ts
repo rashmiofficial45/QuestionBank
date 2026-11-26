@@ -34,6 +34,7 @@ const question = z.object({
 });
 export const questionSchema = z.discriminatedUnion("interaction", [
   question.extend({ interaction: z.literal("single_choice"), answer: z.string().nullable() }),
+  question.extend({ interaction: z.literal("true_false"), answer: z.string().nullable() }),
   question.extend({ interaction: z.literal("multiple_choice"), answer: z.array(z.string()).max(12).nullable() }),
 ]);
 export type Content = z.infer<typeof questionSchema>;
@@ -41,7 +42,7 @@ export type Content = z.infer<typeof questionSchema>;
 export function validSelection(content: Content, values: FormDataEntryValue[]) {
   const ids = z.array(z.string().min(1).max(64)).max(12).safeParse(values);
   if (!ids.success || new Set(ids.data).size !== ids.data.length ||
-      (content.interaction === "single_choice" && ids.data.length > 1) ||
+      (content.interaction !== "multiple_choice" && ids.data.length > 1) ||
       !ids.data.every((id) => content.options.some((option) => option.id === id))) return null;
   return ids.data;
 }
@@ -50,6 +51,12 @@ export function publicationIssues(content: Content): string[] {
   const issues = [];
   const ids = new Set(content.options.map((option) => option.id));
   if (ids.size < 2 || ids.size !== content.options.length || new Set(content.options.map((option) => option.label.toLowerCase())).size !== ids.size) issues.push("Provide at least two options with distinct labels and identifiers.");
+  if (content.interaction === "true_false") {
+    const values = new Set(content.options.map((option) => option.text.trim().toLowerCase()));
+    if (content.options.length !== 2 || !values.has("true") || !values.has("false")) {
+      issues.push("True/False questions need exactly one True option and one False option.");
+    }
+  }
   const answers = choiceIds(content.answer);
   const minimum = content.interaction === "multiple_choice" ? 2 : 1;
   if (answers.length < minimum || new Set(answers).size !== answers.length || !answers.every((id) => ids.has(id))) {

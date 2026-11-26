@@ -78,10 +78,11 @@ export function EditForm({ content, importId, id, issues, generation, classifica
     })}
     <label className="field">Answer interaction
       <select name="interaction" aria-label="Answer interaction" value={interaction} onChange={(event) => {
-        const next = event.target.value === "multiple_choice" ? "multiple_choice" : "single_choice";
+        const value = event.target.value;
+        const next = value === "multiple_choice" || value === "true_false" ? value : "single_choice";
         setInteraction(next);
-        if (next === "single_choice") setAnswers((current) => current.slice(0, 1));
-      }}><option value="single_choice">Single choice</option><option value="multiple_choice">Multiple correct answers</option></select>
+        if (next !== "multiple_choice") setAnswers((current) => current.slice(0, 1));
+      }}><option value="single_choice">Single choice</option><option value="true_false">True/False</option><option value="multiple_choice">Multiple correct answers</option></select>
     </label>
     <input type="hidden" name="options" value={JSON.stringify(options)} />
     <section className="grid gap-3">
@@ -111,7 +112,7 @@ export function EditForm({ content, importId, id, issues, generation, classifica
             Option {option.label}
           </label>)}
         </fieldset>
-      : <label className="field">Correct answer<select name="answer" aria-label="Correct answer" value={answers[0] ?? ""} onChange={(event) => setAnswers(event.target.value ? [event.target.value] : [])}><option value="">Choose an answer</option>{options.map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label>}
+      : <label className="field">Correct answer<select name="answer" aria-label="Correct answer" value={answers[0] ?? ""} onChange={(event) => setAnswers(event.target.value ? [event.target.value] : [])}><option value="">Choose an answer</option>{options.map((option) => <option value={option.id} key={option.id}>{interaction === "true_false" ? option.text : option.label}</option>)}</select></label>}
     <label className="field">Explanation<Textarea name="explanation" value={explanation} onChange={(event) => setExplanation(event.target.value)} rows={3} maxLength={8000} /></label>
     <section className="grid gap-3">
       <h3 className="font-semibold">Classification</h3>
